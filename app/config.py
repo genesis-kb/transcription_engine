@@ -97,6 +97,14 @@ class Settings:
     def CLAUDE_API_KEY(self):
         return self._get_env_variable('CLAUDE_API_KEY')
 
+    @property
+    def SUPABASE_URL(self):
+        return os.getenv('SUPABASE_URL')
+
+    @property
+    def SUPABASE_KEY(self):
+        return os.getenv('SUPABASE_KEY')
+
 # Initialize the Settings class and expose an instance
 settings = Settings()
 

@@ -252,3 +252,121 @@ async def get_queue():
         for transcript in transcription_instance.transcripts
     ]
     return {"data": queue}
+
+
+@router.get("/corrected/")
+async def get_corrected_transcripts():
+    """
+    Fetch corrected transcripts from the queue.
+    Returns a list of transcripts with their corrected text.
+    """
+    if transcription_instance is None:
+        return {"data": []}
+
+    corrected = []
+    for transcript in transcription_instance.transcripts:
+        corrected_text = transcript.outputs.get('corrected_text')
+        if corrected_text:
+            corrected.append({
+                "title": transcript.title,
+                "loc": transcript.source.loc,
+                "status": transcript.status,
+                "corrected_text": corrected_text,
+            })
+    return {"data": corrected}
+
+
+@router.get("/summaries/")
+async def get_summaries():
+    """
+    Fetch summaries of the transcripts from the queue.
+    Returns a list of transcripts with their summaries.
+    """
+    if transcription_instance is None:
+        return {"data": []}
+
+    summaries = []
+    for transcript in transcription_instance.transcripts:
+        summary = transcript.summary
+        if summary:
+            summaries.append({
+                "title": transcript.title,
+                "loc": transcript.source.loc,
+                "status": transcript.status,
+                "summary": summary,
+            })
+    return {"data": summaries}
+
+
+# =============================================================================
+# Database-backed endpoints (Supabase)
+# =============================================================================
+
+from app.services.supabase_service import get_supabase_service
+
+
+@router.get("/db/transcripts/")
+async def get_db_transcripts(limit: int = 50, offset: int = 0):
+    """
+    Fetch all transcripts from the database with pagination.
+    """
+    supabase = get_supabase_service()
+    if not supabase.is_available:
+        raise HTTPException(
+            status_code=503,
+            detail="Database not configured. Set SUPABASE_URL and SUPABASE_KEY."
+        )
+    
+    data = supabase.get_all_transcripts(limit=limit, offset=offset)
+    return {"data": data}
+
+
+@router.get("/db/transcripts/{transcript_id}")
+async def get_db_transcript_by_id(transcript_id: str):
+    """
+    Fetch a single transcript by ID from the database.
+    """
+    supabase = get_supabase_service()
+    if not supabase.is_available:
+        raise HTTPException(
+            status_code=503,
+            detail="Database not configured. Set SUPABASE_URL and SUPABASE_KEY."
+        )
+    
+    data = supabase.get_transcript_by_id(transcript_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+    return {"data": data}
+
+
+@router.get("/db/corrected/")
+async def get_db_corrected_transcripts(limit: int = 50, offset: int = 0):
+    """
+    Fetch corrected transcripts from the database with pagination.
+    """
+    supabase = get_supabase_service()
+    if not supabase.is_available:
+        raise HTTPException(
+            status_code=503,
+            detail="Database not configured. Set SUPABASE_URL and SUPABASE_KEY."
+        )
+    
+    data = supabase.get_corrected_transcripts(limit=limit, offset=offset)
+    return {"data": data}
+
+
+@router.get("/db/summaries/")
+async def get_db_summaries(limit: int = 50, offset: int = 0):
+    """
+    Fetch transcript summaries from the database with pagination.
+    """
+    supabase = get_supabase_service()
+    if not supabase.is_available:
+        raise HTTPException(
+            status_code=503,
+            detail="Database not configured. Set SUPABASE_URL and SUPABASE_KEY."
+        )
+    
+    data = supabase.get_summaries(limit=limit, offset=offset)
+    return {"data": data}
+

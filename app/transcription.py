@@ -17,6 +17,7 @@ from app.exporters import ExporterFactory, TranscriptExporter
 from app.services.correction import CorrectionService
 from app.services.summarizer import SummarizerService
 from app.services.global_tag_manager import GlobalTagManager
+from app.services.supabase_service import get_supabase_service
 
 
 class Transcription:
@@ -528,6 +529,11 @@ class Transcription:
             transcript.outputs["json"] = self.exporters["json"].export(
                 transcript
             )
+
+        # Save to Supabase if configured
+        supabase = get_supabase_service()
+        if supabase.is_available:
+            supabase.save_from_transcript_object(transcript)
 
     def clean_up(self):
         self.logger.debug("Cleaning up...")

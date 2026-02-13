@@ -3,8 +3,13 @@ from app.logging import get_logger
 from app.services.global_tag_manager import GlobalTagManager
 import openai
 from app.config import settings
+import google.generativeai as genai
+from google.generativeai.types import GenerationConfig
 
 logger = get_logger()
+
+# Maximum characters per chunk to avoid timeout (roughly 4000 words)
+MAX_CHUNK_SIZE = 20000
 
 class CorrectionService:
     def __init__(self, provider='openai', model='gpt-4o'):
@@ -14,26 +19,93 @@ class CorrectionService:
         if self.provider == 'openai':
             self.client = openai
             self.client.api_key = settings.OPENAI_API_KEY
+        elif self.provider == 'google':
+            genai.configure(api_key=settings.GOOGLE_API_KEY)
+            if self.model == 'gpt-4o': # Default overwrite for google
+                self.model = 'gemini-2.0-flash'
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
 
+    def _split_into_chunks(self, text: str, max_size: int = MAX_CHUNK_SIZE) -> list[str]:
+        """Split text into chunks at paragraph boundaries."""
+        if len(text) <= max_size:
+            return [text]
+        
+        chunks = []
+        paragraphs = text.split('\n\n')
+        current_chunk = ""
+        
+        for para in paragraphs:
+            if len(current_chunk) + len(para) + 2 > max_size:
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                current_chunk = para
+            else:
+                current_chunk = current_chunk + '\n\n' + para if current_chunk else para
+        
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        
+        return chunks
+
     def process(self, transcript: Transcript, **kwargs):
-        logger.info(f"Correcting transcript with {self.provider}...")
+        logger.info(f"Correcting transcript with {self.provider} (model: {self.model})...")
         keywords = kwargs.get('keywords', [])
         
         metadata = transcript.source.to_json()
         global_context = self.tag_manager.get_correction_context()
-
-        prompt = self._build_enhanced_prompt(transcript.outputs['raw'], keywords, metadata, global_context)
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        corrected_text = response.choices[0].message.content
         
-        transcript.outputs['corrected_text'] = corrected_text
-        logger.info("Correction complete.")
+        raw_text = transcript.outputs['raw']
+        text_length = len(raw_text)
+        logger.info(f"Transcript length: {text_length} characters")
+        
+        chunks = self._split_into_chunks(raw_text)
+        num_chunks = len(chunks)
+        
+        if num_chunks > 1:
+            logger.info(f"Splitting transcript into {num_chunks} chunks for processing...")
+        
+        corrected_chunks = []
+        for i, chunk in enumerate(chunks, 1):
+            if num_chunks > 1:
+                logger.info(f"Processing chunk {i}/{num_chunks} ({len(chunk)} chars)...")
+            
+            prompt = self._build_enhanced_prompt(chunk, keywords, metadata, global_context)
+            
+            try:
+                if self.provider == 'openai':
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[{"role": "user", "content": prompt}],
+                        timeout=300  # 5 minute timeout
+                    )
+                    corrected_text = response.choices[0].message.content
+                elif self.provider == 'google':
+                    model = genai.GenerativeModel(
+                        self.model,
+                        generation_config=GenerationConfig(
+                            max_output_tokens=8192,
+                        )
+                    )
+                    # Use longer timeout for generation
+                    response = model.generate_content(
+                        prompt,
+                        request_options={"timeout": 300}  # 5 minute timeout
+                    )
+                    corrected_text = response.text
+                
+                corrected_chunks.append(corrected_text)
+                logger.info(f"Chunk {i}/{num_chunks} correction complete.")
+                
+            except Exception as e:
+                logger.error(f"Error correcting chunk {i}: {e}")
+                # Fall back to original text for this chunk
+                corrected_chunks.append(chunk)
+                logger.warning(f"Using original text for chunk {i} due to error.")
+        
+        # Combine all corrected chunks
+        transcript.outputs['corrected_text'] = '\n\n'.join(corrected_chunks)
+        logger.info(f"Correction complete. Total corrected length: {len(transcript.outputs['corrected_text'])} chars")
 
     def _build_enhanced_prompt(self, text, keywords, metadata, global_context):
         prompt = (

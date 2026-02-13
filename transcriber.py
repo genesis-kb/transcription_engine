@@ -320,6 +320,7 @@ def transcribe(
     cutoff_date: str,
     correct: bool,
     llm_provider: str,
+    nocheck: bool,
 ) -> None:
     """Transcribe the provided sources. Suported sources include: \n
     - YouTube videos and playlists\n
@@ -360,6 +361,7 @@ def transcribe(
         "cutoff_date": cutoff_date,
         "correct": correct,
         "llm_provider": llm_provider,
+        "nocheck": nocheck,
     }
     try:
         queue_response = api_client.add_to_queue(data, source)

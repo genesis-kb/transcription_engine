@@ -18,6 +18,7 @@ from app.services.correction import CorrectionService
 from app.services.summarizer import SummarizerService
 from app.services.global_tag_manager import GlobalTagManager
 from app.services.supabase_service import get_supabase_service
+from app.services.metadata_extractor import MetadataExtractorService
 
 
 class Transcription:
@@ -84,6 +85,9 @@ class Transcription:
         self.review_flag = self.__configure_review_flag(needs_review)
 
         self.processing_services = []
+        # Always run metadata extraction first (uses Gemini)
+        if not test_mode:
+            self.processing_services.append(MetadataExtractorService())
         if correct:
             self.processing_services.append(CorrectionService(provider=llm_provider, model=llm_correction_model))
         if summarize:

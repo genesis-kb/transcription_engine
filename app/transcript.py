@@ -122,6 +122,9 @@ class Source:
         self.speakers = speakers
         self.preprocess = preprocess
         self.additional_resources: list[dict[str, str]] = []
+        # Auto-extracted metadata (populated by MetadataExtractorService)
+        self.conference = None
+        self.topics = []
 
     @property
     def output_path_with_title(self):
@@ -202,6 +205,10 @@ class Source:
             json_data['additional_resources'] = self.additional_resources
         if self.episode:
             json_data['episode'] = self.episode
+        if self.conference:
+            json_data['conference'] = self.conference
+        if self.topics:
+            json_data['topics'] = self.topics
         return json_data
 
 
@@ -322,7 +329,8 @@ class Video(Source):
                 self.youtube_metadata = {
                     "description": yt_info.get('description', 'N/A'),
                     "tags": yt_info.get('tags', 'N/A'),
-                    "categories": yt_info.get('categories', 'N/A')
+                    "categories": yt_info.get('categories', 'N/A'),
+                    "channel_name": yt_info.get('channel', '') or yt_info.get('uploader', ''),
                 }
                 if self.event_date is None and yt_info.get('upload_date', None):
                     self.event_date = datetime.strptime(

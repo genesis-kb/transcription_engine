@@ -98,6 +98,9 @@ class SupabaseService:
                 "summary": transcript.summary if hasattr(transcript, "summary") else None,
                 "media_url": source.source_file,
                 "status": transcript.status,
+                "conference": getattr(source, 'conference', None),
+                "topics": getattr(source, 'topics', []) or [],
+                "channel_name": source.youtube_metadata.get('channel_name', '') if hasattr(source, 'youtube_metadata') and source.youtube_metadata else None,
             }
             return self.save_transcript(transcript_data)
         except Exception as e:

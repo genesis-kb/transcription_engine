@@ -10,7 +10,16 @@ import yt_dlp
 from clint.textui import progress
 
 from app import logging, utils
+from app.config import settings
 from app.media_processor import MediaProcessor
+
+
+def _yt_opts(**extra):
+    """Build yt-dlp options with cookies if available."""
+    opts = {**extra}
+    if settings.YT_COOKIES_FILE and os.path.exists(settings.YT_COOKIES_FILE):
+        opts["cookiefile"] = settings.YT_COOKIES_FILE
+    return opts
 
 
 logger = logging.get_logger()
@@ -393,10 +402,10 @@ class Video(Source):
 
     def download_video_metadata(self):
         self.logger.debug(f"Downloading metadata from: {self.source_file}")
-        ydl_opts = {
-            "quiet": True,  # Suppress console output
-            "extract_flat": True,  # Extract only metadata without downloading
-        }
+        ydl_opts = _yt_opts(
+            quiet=True,
+            extract_flat=True,
+        )
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 yt_info = ydl.extract_info(self.source_file, download=False)
@@ -440,11 +449,11 @@ class Video(Source):
                 raise Exception(f"{self.source_file} is a local file")
             try:
                 self.logger.debug(f"Downloading video: {self.source_file}")
-                ydl_opts = {
-                    "format": "worstvideo+worstaudio/worst",
-                    "outtmpl": os.path.join(working_dir, "videoFile.%(ext)s"),
-                    "nopart": True,
-                }
+                ydl_opts = _yt_opts(
+                    format="worstvideo+worstaudio/worst",
+                    outtmpl=os.path.join(working_dir, "videoFile.%(ext)s"),
+                    nopart=True,
+                )
                 with yt_dlp.YoutubeDL(ydl_opts) as ytdl:
                     ytdl.download([self.source_file])
 

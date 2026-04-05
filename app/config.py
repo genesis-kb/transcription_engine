@@ -18,6 +18,8 @@ class Settings:
 
         # server
         self.TSTBTC_METADATA_DIR = os.getenv("TSTBTC_METADATA_DIR")
+        # yt-dlp cookies file for YouTube authentication
+        self.YT_COOKIES_FILE = os.getenv("YT_COOKIES_FILE", "cookies.txt")
         # GitHub API settings
         self.GITHUB_REPO_OWNER = os.getenv(
             "GITHUB_REPO_OWNER", "bitcointranscripts"

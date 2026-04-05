@@ -7,6 +7,15 @@ import soundfile as sf
 import yt_dlp
 
 from app import logging, utils
+from app.config import settings
+
+
+def _yt_opts(**extra):
+    """Build yt-dlp options with cookies if available."""
+    opts = {**extra}
+    if settings.YT_COOKIES_FILE and os.path.exists(settings.YT_COOKIES_FILE):
+        opts["cookiefile"] = settings.YT_COOKIES_FILE
+    return opts
 
 
 logger = logging.get_logger()
@@ -105,11 +114,7 @@ class MediaProcessor:
         """
         Extracts and returns the direct URL of a YouTube video using yt_dlp.
         """
-        ydl_opts = {
-            "format": "best",
-            "quiet": True,
-            "no_warnings": True,
-        }
+        ydl_opts = _yt_opts(format="best", quiet=True, no_warnings=True)
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -167,7 +172,7 @@ class MediaProcessor:
 
     def get_youtube_video_info(self, youtube_url):
         """Extracts video metadata using yt_dlp."""
-        ydl_opts = {"quiet": True, "no_warnings": True}
+        ydl_opts = _yt_opts(quiet=True, no_warnings=True)
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 return ydl.extract_info(youtube_url, download=False)
@@ -193,11 +198,11 @@ class MediaProcessor:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        ydl_opts = {
-            "format": format_selector,
-            "outtmpl": os.path.join(output_dir, filename_template),
-            "nopart": True,
-        }
+        ydl_opts = _yt_opts(
+            format=format_selector,
+            outtmpl=os.path.join(output_dir, filename_template),
+            nopart=True,
+        )
 
         try:
             logger.debug(f"Downloading video: {youtube_url}")

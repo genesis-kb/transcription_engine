@@ -18,7 +18,7 @@ from app.services.metadata_extractor import MetadataExtractorService
 from app.services.summarizer import SummarizerService
 
 # from app.metadata_parser import MetadataParser
-from app.transcript import RSS, Audio, Playlist, Source, Transcript, Video
+from app.transcript import RSS, Audio, Playlist, Source, Transcript, Video, _yt_opts
 
 
 class Transcription:
@@ -46,10 +46,12 @@ class Transcription:
         llm_provider="openai",
         llm_correction_model="gpt-4o",
         llm_summary_model="gpt-4o",
+        no_db=False,
     ):
         self.nocleanup = nocleanup
         self.status = "idle"
         self.test_mode = test_mode
+        self.no_db = no_db
         self.logger = get_logger()
         self.tmp_dir = (
             working_dir if working_dir is not None else tempfile.mkdtemp()
@@ -169,10 +171,10 @@ class Transcription:
             a YouTube playlist or YouTube video by requesting its metadata
             Does not support video-ids, only urls"""
             try:
-                ydl_opts = {
-                    "quiet": False,  # Suppress console output
-                    "extract_flat": True,  # Extract only metadata without downloading
-                }
+                ydl_opts = _yt_opts(
+                    quiet=False,
+                    extract_flat=True,
+                )
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info_dict = ydl.extract_info(
                         source.source_file, download=False
@@ -583,10 +585,13 @@ class Transcription:
                 transcript
             )
 
-        # Save to database if configured
-        db = get_database_service()
-        if db.is_available:
-            db.save_from_transcript_object(transcript)
+        # Save to database if configured (skip when --no-db is set)
+        if self.no_db:
+            self.logger.info("Skipping database save (--no-db flag set)")
+        else:
+            db = get_database_service()
+            if db.is_available:
+                db.save_from_transcript_object(transcript)
 
     def clean_up(self):
         self.logger.debug("Cleaning up...")

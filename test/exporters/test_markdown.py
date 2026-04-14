@@ -3,6 +3,8 @@ import os
 import pytest
 import yaml
 
+from app.utils import slugify
+
 
 @pytest.mark.unit
 @pytest.mark.exporters
@@ -41,7 +43,7 @@ class TestMarkdownExporter:
         assert "This is a test transcript." in content
 
         # Verify the file path
-        assert os.path.basename(result).startswith("Test Transcript")
+        assert os.path.basename(result).startswith(slugify(mock_transcript.title))
         assert result.endswith(".md")
 
     def test_export_without_metadata(

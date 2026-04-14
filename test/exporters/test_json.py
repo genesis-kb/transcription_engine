@@ -4,6 +4,7 @@ import os
 import pytest
 
 from app.exporters import JsonExporter
+from app.utils import slugify
 
 
 @pytest.mark.unit
@@ -35,7 +36,7 @@ class TestJsonExporter:
         expected_path = os.path.join(
             temp_dir,
             mock_transcript.source.loc,
-            f"{mock_transcript.title}.json",
+            f"{slugify(mock_transcript.title)}.json",
         )
         assert os.path.abspath(result) == os.path.abspath(expected_path)
 

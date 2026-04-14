@@ -15,10 +15,11 @@ from app.media_processor import MediaProcessor
 
 
 def _yt_opts(**extra):
-    """Build yt-dlp options with cookies if available."""
     opts = {**extra}
     if settings.YT_COOKIES_FILE and os.path.exists(settings.YT_COOKIES_FILE):
         opts["cookiefile"] = settings.YT_COOKIES_FILE
+    opts.setdefault("js_runtimes", {"node": {}})
+    opts.setdefault("remote_components", {"ejs:github"})
     return opts
 
 

@@ -235,6 +235,8 @@ server.py                # FastAPI app entry point
 config.ini               # Pipeline configuration
 ```
 
+Contributors can join our [discord](https://discord.gg/BxqCaQHFGz) server here
+
 ## Acknowledgements
 
 This project is a fork of [tstbtc](https://github.com/bitcointranscripts/tstbtc), built by the [Bitcoin Transcripts](https://github.com/bitcointranscripts) team. Their work on creating an open-source transcription pipeline for Bitcoin technical content made this project possible. We've extended the original engine with LLM-powered operations but the core transcription architecture and the vision of making Bitcoin knowledge accessible to everyone comes from their efforts. Thank you to the Bitcoin Transcripts contributors for building and maintaining this foundation.

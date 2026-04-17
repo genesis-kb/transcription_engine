@@ -24,12 +24,23 @@ def _get_engine():
         if not database_url:
             return None
         try:
+            from urllib.parse import parse_qs, urlparse
+
+            connect_args = {}
+            # Parse query parameters from URL to handle SSL and other options
+            parsed_url = urlparse(database_url)
+            query_params = parse_qs(parsed_url.query)
+
+            if "sslmode" in query_params:
+                connect_args["sslmode"] = query_params["sslmode"][0]
+
             _engine = create_engine(
                 database_url,
                 pool_size=5,
                 max_overflow=10,
                 pool_pre_ping=True,
                 pool_recycle=1800,
+                connect_args=connect_args,
             )
             logger.info("Database engine created successfully.")
         except Exception as e:

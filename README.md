@@ -42,7 +42,7 @@ youtube_channels (DB)
 
 ## LLM Services (Gemini)
 
-All LLM services use `google-genai` SDK with `gemini-3-flash-preview` and include retry logic with exponential backoff for 503/429 errors.
+All LLM services use the modern `google-genai` SDK with `gemini-3-flash-preview` models. The pipeline includes robust retry logic with exponential backoff for 503/429 errors.
 
 | Service | Purpose | Chunk Size |
 |---------|---------|------------|
@@ -86,6 +86,12 @@ python -m venv venv
 source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate     # Windows
 pip install -r requirements.txt
+
+### Automated Setup (Recommended)
+
+Alternatively, use the provided setup scripts to handle environment creation and dependency installation in one command:
+- **Windows**: `.\setup.ps1`
+- **Linux/macOS**: `./setup.sh`
 ```
 
 ### Configuration
@@ -103,6 +109,13 @@ Required environment variables:
 | `YOUTUBE_API_KEY` | YouTube Data API v3 for channel scanning |
 | `DEEPGRAM_API_KEY` | Deepgram STT (if using Deepgram) |
 | `SMALLEST_API_KEY` | SmallestAI STT (if using SmallestAI) |
+
+### Database Initialization
+
+Before running the server, you must initialize the database schema to create the required tables:
+```bash
+python scripts/initialize_db.py
+```
 
 Optional:
 

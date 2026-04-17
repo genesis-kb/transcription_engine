@@ -1,16 +1,69 @@
+# ── Bitcoin Transcription Engine ─ Docker Compose ────────────────────────────
+# Usage:
+#   1. Copy env.example → .env and fill in your API keys
+#   2. Run: docker compose up --build
+#
+# The `db` service provides a **local** PostgreSQL instance so you don't need
+# an external AWS RDS connection to get started.
+# When you switch to RDS, update DATABASE_URL in .env and remove the db service.
+
 services:
+
+  # ── Local PostgreSQL (remove if using external RDS) ───────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: transcription
+      POSTGRES_PASSWORD: transcription
+      POSTGRES_DB: transcription_engine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"          # expose so you can connect with a local DB client
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transcription -d transcription_engine"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI transcription server ───────────────────────────────────────────
   server:
     build: .
+    restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
       - .env
-    command: ["tstbtc-server", "prod"]
-  
+    environment:
+      # Override DATABASE_URL to point at the local db service above.
+      # Remove this line if you are using an external DATABASE_URL in .env.
+      DATABASE_URL: postgresql://transcription:transcription@db:5432/transcription_engine
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      # Persist downloaded audio files between container restarts
+      - media_cache:/app/media
+
+  # ── CLI helper (optional, for one-off transcription commands) ─────────────
   cli:
     build: .
     entrypoint: ["tstbtc"]
     env_file:
       - .env
     environment:
-      - TRANSCRIPTION_SERVER_URL=http://server:8000
+      TRANSCRIPTION_SERVER_URL: http://server:8000
+    depends_on:
+      - server
+    profiles:
+      - cli          # only starts when explicitly requested: docker compose --profile cli run cli
+
+volumes:
+  postgres_data:
+  media_cache:

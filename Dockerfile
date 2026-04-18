@@ -1,25 +1,32 @@
-# Use Python 3.10 as the base image
-FROM python:3.10
+# ── Bitcoin Transcription Engine ──────────────────────────────────────────────
+# Use slim Python image for a smaller footprint
+FROM python:3.11-slim
 
-# Install system dependencies including FFmpeg
-RUN apt-get update && apt-get install -y ffmpeg
+# Install system dependencies:
+#   ffmpeg   - audio/video processing
+#   curl     - used in health checks
+#   gcc      - needed to compile some Python packages (e.g. psycopg2)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg curl gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
 WORKDIR /app
 
-# Copy requirements file first to leverage caching
-COPY requirements.txt /app/requirements.txt
-
-# Install dependencies
-# This layer is cached if requirements don't change
-RUN pip install --no-cache-dir --timeout=300 -r /app/requirements.txt
+# Copy requirements first to leverage layer caching
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --timeout=300 -r requirements.txt
 
 # Copy the rest of the application
-# Done after installing deps to preserve caching
-COPY . /app
+COPY . .
 
-# Install the package itself
-# Includes the tstbtc-server entry point
+# Install the package itself (provides tstbtc / tstbtc-server entry points)
 RUN pip install --no-cache-dir .
-# To include Whisper support, uncomment the following line:
+# Uncomment to include local Whisper support:
 # RUN pip install --no-cache-dir .[whisper]
+
+# Expose the FastAPI port
+EXPOSE 8000
+
+# Default: run the FastAPI server via the formal entry point
+CMD ["tstbtc-server", "prod"]

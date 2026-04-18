@@ -1,7 +1,9 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.database import init_db
 from app.exceptions import DuplicateSourceError
 from routes.curator import router as curator_router
 from routes.ingestion import router as ingestion_router
@@ -9,7 +11,14 @@ from routes.media import router as media_router
 from routes.transcription import router as transcription_router
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize database on startup
+    init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 origins = [
     "http://localhost:3000",

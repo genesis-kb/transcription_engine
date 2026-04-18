@@ -30,15 +30,18 @@ services:
   # ── FastAPI transcription server ───────────────────────────────────────────
   server:
     build: .
+    command: ["tstbtc-server", "prod"]
     restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
       - .env
     environment:
-      # Override DATABASE_URL to point at the local db service above.
-      # Remove this line if you are using an external DATABASE_URL in .env.
-      DATABASE_URL: postgresql://transcription:transcription@db:5432/transcription_engine
+      # Default DATABASE_URL to the local db service above.
+      # Set DATABASE_URL in .env (or the shell) to use an external database instead.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://transcription:transcription@db:5432/transcription_engine}
+      # Use the mounted volume for metadata and media storage
+      TSTBTC_METADATA_DIR: /app/media
     depends_on:
       db:
         condition: service_healthy

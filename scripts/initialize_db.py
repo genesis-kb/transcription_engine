@@ -3,7 +3,8 @@ import sys
 from pathlib import Path
 
 # Add project root to sys.path
-sys.path.append(str(Path(__file__).parent.parent))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(REPO_ROOT))
 
 from dotenv import load_dotenv
 from app.database import init_db

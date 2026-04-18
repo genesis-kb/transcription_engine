@@ -86,13 +86,13 @@ python -m venv venv
 source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate     # Windows
 pip install -r requirements.txt
+```
 
 ### Automated Setup (Recommended)
 
 Alternatively, use the provided setup scripts to handle environment creation and dependency installation in one command:
 - **Windows**: `.\setup.ps1`
 - **Linux/macOS**: `./setup.sh`
-```
 
 ### Configuration
 
@@ -110,10 +110,14 @@ Required environment variables:
 | `DEEPGRAM_API_KEY` | Deepgram STT (if using Deepgram) |
 | `SMALLEST_API_KEY` | SmallestAI STT (if using SmallestAI) |
 
-### Database Initialization
+### Database Initialization (Automatic)
 
-Before running the server, you must initialize the database schema to create the required tables:
+The server automatically initializes the database schema on startup. This happens both when running locally and via Docker.
+
+If you need to initialize the database manually (e.g., before starting the server for the first time or when running scripts), you can use the provided utility:
+
 ```bash
+# Ensure your venv is activated and DATABASE_URL is set in .env
 python scripts/initialize_db.py
 ```
 

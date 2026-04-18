@@ -83,16 +83,13 @@ if ! command -v python3 &> /dev/null; then
 fi
 
 # Check version (>= 3.10)
-PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
-MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
-MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
-
-if [ "$MAJOR" -lt 3 ] || ([ "$MAJOR" -eq 3 ] && [ "$MINOR" -lt 10 ]); then
-    print_fail "Python 3.10 or higher is required (found $PYTHON_VERSION)"
+PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')
+if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' &> /dev/null; then
+    print_fail "Python 3.10 or higher is required. Found: Python ${PYTHON_VERSION}"
     exit 1
 fi
 
-print_success "Found: Python $PYTHON_VERSION"
+print_success "Found: Python ${PYTHON_VERSION}"
 
 print_step "2. Checking FFmpeg"
 if command -v ffmpeg &> /dev/null; then

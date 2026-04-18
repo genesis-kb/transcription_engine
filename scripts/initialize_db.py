@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from app.database import init_db
 
 # Ensure env vars are loaded for standalone execution from the project root
-load_dotenv()
+load_dotenv(dotenv_path=REPO_ROOT / ".env")
 
 def main():
     print("------------------------------------------")

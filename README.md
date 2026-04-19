@@ -64,6 +64,9 @@ All LLM services use `google-genai` SDK with `gemini-3-flash-preview` and includ
 
 ## Setup
 
+Quick runbook for local startup, DB initialization, and queuing 10 videos:
+- [docs/local-run-and-queue.md](docs/local-run-and-queue.md)
+
 ### Prerequisites
 
 - Python 3.10+

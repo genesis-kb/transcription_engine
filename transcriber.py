@@ -562,6 +562,7 @@ cli.add_command(commands.media)
 cli.add_command(commands.curator)
 cli.add_command(commands.server)
 cli.add_command(commands.ingest)
+cli.add_command(commands.specs)
 
 if __name__ == "__main__":
     cli()

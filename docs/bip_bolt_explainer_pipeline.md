@@ -224,6 +224,38 @@ The smallest useful implementation can add:
 LLM generation and full vector search can be added after the data model and
 matching flow are reviewed.
 
+### Step 1: Spec Source Sync
+
+The initial sync implementation fetches or reads BIP/BOLT files and returns
+normalized raw spec records. Transcript matching remains out of scope for this
+phase.
+
+CLI examples:
+
+```bash
+# Sync the MVP allowlist from canonical GitHub repos.
+tstbtc specs sync --output-dir data/raw_specs
+
+# Sync specific specs from canonical GitHub repos.
+tstbtc specs sync BIP-341 BOLT-11 --output-dir data/raw_specs
+
+# Read local spec files instead of fetching from GitHub.
+tstbtc specs sync --local-dir ./specs --output-dir data/raw_specs
+```
+
+Each raw record includes:
+
+- `spec_id`
+- `spec_type`
+- `number`
+- `raw_text`
+- `source_url`
+- `source_path`
+- `source_repository`
+- `commit_hash`
+- `content_hash`
+- `fetched_at`
+
 ## Guiding Principle
 
 The specification text is the source of truth. Transcript context should improve

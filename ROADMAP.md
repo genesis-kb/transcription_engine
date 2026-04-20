@@ -48,6 +48,7 @@ These are bigger bets we're exploring. Community input will shape what gets buil
 - [ ] **Analytics dashboard** — topic trends over time, speaker activity, conference stats, transcript volume growth
 - [ ] **Knowledge graph** — extract entities and relationships from transcripts via LLM. Query: "Show me everything related to OP_VAULT" or "How are these speakers connected?"
 - [ ] **Graph visualization** — interactive entity relationship explorer on the frontend
+- [ ] **BIP/BOLT explainers** — ingest Bitcoin and Lightning specifications, match them to transcript context, and generate audience-specific explanations. See [BIP/BOLT Explainer Pipeline](docs/bip_bolt_explainer_pipeline.md).
 
 ---
 

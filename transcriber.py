@@ -110,8 +110,7 @@ diarize = click.option(
     "--diarize",
     is_flag=True,
     default=False,
-    help="Supply this flag if you have multiple speakers AKA "
-    "want to diarize the content",
+    help="Enable speaker diarization (label who's speaking in multi-speaker content)",
 )
 summarize = click.option(
     "-S",
@@ -353,7 +352,6 @@ def transcribe(
     if not (deepgram or smallestai):
         deepgram = settings.config.getboolean("deepgram", False)
         smallestai = settings.config.getboolean("smallestai", False)
-    diarize = diarize or settings.config.getboolean("diarize", False)
     markdown = markdown or settings.config.getboolean("save_to_markdown", False)
 
     data = {
@@ -577,6 +575,7 @@ cli.add_command(commands.media)
 cli.add_command(commands.curator)
 cli.add_command(commands.server)
 cli.add_command(commands.ingest)
+cli.add_command(commands.db)
 
 if __name__ == "__main__":
     cli()

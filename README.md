@@ -98,7 +98,7 @@ Required environment variables:
 
 | Variable | Purpose |
 |----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string (AWS RDS) |
+| `DATABASE_URL` | PostgreSQL connection string (local Docker or AWS RDS) |
 | `GOOGLE_API_KEY` | Gemini API for correction, summarization, classification, metadata extraction |
 | `YOUTUBE_API_KEY` | YouTube Data API v3 for channel scanning |
 | `DEEPGRAM_API_KEY` | Deepgram STT (if using Deepgram) |
@@ -109,6 +109,33 @@ Optional:
 | Variable | Purpose |
 |----------|---------|
 | `TRANSCRIPTION_SERVER_URL` | Override transcription server URL (default: `http://localhost:8000`) |
+
+### Database
+
+You can run PostgreSQL either locally via Docker or against AWS RDS. The app picks whichever `DATABASE_URL` points at.
+
+**Option A — Local PostgreSQL via Docker** (no AWS needed):
+
+```bash
+# Start just the postgres container
+docker compose up -d postgres
+
+# Point the app at it (already the default in env.example)
+# DATABASE_URL=postgresql://bitcoin:bitcoin@localhost:5432/transcription_engine
+
+# Create the schema
+tstbtc db init
+```
+
+Data persists in the `postgres_data` Docker volume. To wipe it: `docker compose down -v`.
+
+**Option B — AWS RDS** (or any remote Postgres):
+
+Set `DATABASE_URL` in `.env` to your RDS connection string, then run `tstbtc db init` once to create tables.
+
+Check connectivity anytime with `tstbtc db check`.
+
+### Pipeline settings
 
 Pipeline settings are in `config.ini`:
 
@@ -192,7 +219,7 @@ Output locations:
 |------|-------|
 | Markdown transcript | `local_models/<loc>/<slug>.md` |
 | Raw STT output + metadata | `metadata/<loc>/<slug>/` |
-| Database row | AWS RDS `transcripts` table |
+| Database row | `transcripts` table (local Postgres or AWS RDS) |
 
 ### HTTP API (advanced)
 

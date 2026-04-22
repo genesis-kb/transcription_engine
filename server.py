@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.database import init_db
 from app.exceptions import DuplicateSourceError
 from routes.curator import router as curator_router
 from routes.ingestion import router as ingestion_router
@@ -24,6 +25,11 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    init_db()
 
 
 @app.get("/health")

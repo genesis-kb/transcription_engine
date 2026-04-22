@@ -32,11 +32,11 @@ def print_version(ctx, param, value):
     help="Show the application's version and exit.",
 )
 @click.option(
-    "--auto-server",
-    is_flag=True,
-    default=settings.config.getboolean("auto_server", True),
-    help="Automatically start the server if it's not running (default: True)",
-    show_default=True,
+    "--no-auto-server",
+    "auto_server",
+    flag_value=False,
+    default=True,
+    help="Do not automatically start the server (default: auto-start).",
 )
 @click.option(
     "--server-mode",
@@ -95,8 +95,7 @@ deepgram = click.option(
     "-D",
     "--deepgram",
     is_flag=True,
-    default=settings.config.getboolean("deepgram", False),
-    show_default=True,
+    default=False,
     help="Use deepgram for transcription",
 )
 smallestai_option = click.option(
@@ -110,10 +109,8 @@ diarize = click.option(
     "-M",
     "--diarize",
     is_flag=True,
-    default=settings.config.getboolean("diarize", False),
-    show_default=True,
-    help="Supply this flag if you have multiple speakers AKA "
-    "want to diarize the content",
+    default=False,
+    help="Enable speaker diarization (label who's speaking in multi-speaker content)",
 )
 summarize = click.option(
     "-S",
@@ -165,7 +162,7 @@ upload_to_s3 = click.option(
 save_to_markdown = click.option(
     "--markdown",
     is_flag=True,
-    default=settings.config.getboolean("save_to_markdown", False),
+    default=False,
     help="Save the resulting transcript to a markdown format",
 )
 save_to_text = click.option(
@@ -225,6 +222,13 @@ llm_provider = click.option(
     type=click.Choice(["openai", "google", "claude"]),
     default=settings.config.get("llm_provider", "openai"),
     help="LLM provider for correction and summarization.",
+)
+
+no_db = click.option(
+    "--no-db",
+    is_flag=True,
+    default=False,
+    help="Skip saving the transcript to the database (for testing).",
 )
 
 add_loc = click.option(
@@ -299,6 +303,7 @@ add_category = click.option(
 @auto_start_server
 @correct_transcript
 @llm_provider
+@no_db
 def transcribe(
     source: str,
     loc: str,
@@ -327,6 +332,7 @@ def transcribe(
     correct: bool,
     llm_provider: str,
     nocheck: bool,
+    no_db: bool,
 ) -> None:
     """Transcribe the provided sources. Suported sources include: \n
     - YouTube videos and playlists\n
@@ -341,6 +347,12 @@ def transcribe(
     configure_logger(log_level=logging.INFO)
     url = get_transcription_url()
     api_client = APIClient(url)
+
+    # If user didn't pick a service on CLI, fall back to config defaults
+    if not (deepgram or smallestai):
+        deepgram = settings.config.getboolean("deepgram", False)
+        smallestai = settings.config.getboolean("smallestai", False)
+    markdown = markdown or settings.config.getboolean("save_to_markdown", False)
 
     data = {
         "loc": loc,
@@ -369,6 +381,7 @@ def transcribe(
         "correct": correct,
         "llm_provider": llm_provider,
         "nocheck": nocheck,
+        "no_db": no_db,
     }
     try:
         queue_response = api_client.add_to_queue(data, source)
@@ -562,6 +575,7 @@ cli.add_command(commands.media)
 cli.add_command(commands.curator)
 cli.add_command(commands.server)
 cli.add_command(commands.ingest)
+cli.add_command(commands.db)
 
 if __name__ == "__main__":
     cli()

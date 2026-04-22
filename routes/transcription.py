@@ -117,6 +117,7 @@ async def add_to_queue(
     source_file: Optional[UploadFile] = File(None),
     correct: bool = Form(False),
     llm_provider: str = Form("openai"),
+    no_db: bool = Form(False),
 ):
     temp_file_path = None
     try:
@@ -138,6 +139,7 @@ async def add_to_queue(
             needs_review=needs_review,
             correct=correct,
             llm_provider=llm_provider,
+            no_db=no_db,
         )
         if source_file:
             with tempfile.NamedTemporaryFile(delete=False) as tmp:

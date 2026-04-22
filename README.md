@@ -98,7 +98,7 @@ Required environment variables:
 
 | Variable | Purpose |
 |----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string (AWS RDS) |
+| `DATABASE_URL` | PostgreSQL connection string (local Docker or AWS RDS) |
 | `GOOGLE_API_KEY` | Gemini API for correction, summarization, classification, metadata extraction |
 | `YOUTUBE_API_KEY` | YouTube Data API v3 for channel scanning |
 | `DEEPGRAM_API_KEY` | Deepgram STT (if using Deepgram) |
@@ -109,6 +109,33 @@ Optional:
 | Variable | Purpose |
 |----------|---------|
 | `TRANSCRIPTION_SERVER_URL` | Override transcription server URL (default: `http://localhost:8000`) |
+
+### Database
+
+You can run PostgreSQL either locally via Docker or against AWS RDS. The app picks whichever `DATABASE_URL` points at.
+
+**Option A — Local PostgreSQL via Docker** (no AWS needed):
+
+```bash
+# Start just the postgres container
+docker compose up -d postgres
+
+# Point the app at it (already the default in env.example)
+# DATABASE_URL=postgresql://bitcoin:bitcoin@localhost:5432/transcription_engine
+
+# Create the schema
+tstbtc db init
+```
+
+Data persists in the `postgres_data` Docker volume. To wipe it: `docker compose down -v`.
+
+**Option B — AWS RDS** (or any remote Postgres):
+
+Set `DATABASE_URL` in `.env` to your RDS connection string, then run `tstbtc db init` once to create tables.
+
+Check connectivity anytime with `tstbtc db check`.
+
+### Pipeline settings
 
 Pipeline settings are in `config.ini`:
 
@@ -128,17 +155,81 @@ classification_max_duration = 3000
 
 ## Usage
 
-### Start the Server
+The project provides both a CLI (`tstbtc` / `transcriber.py`) and an HTTP API. The CLI auto-starts the server in the background, so for most workflows you only need the CLI.
+
+### CLI (recommended)
+
+Transcribe a YouTube video with Deepgram:
 
 ```bash
-python -m uvicorn server:app --host 0.0.0.0 --port 8000
+tstbtc transcribe "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --deepgram \
+  --diarize \
+  --markdown \
+  --summarize \
+  --correct \
+  --llm-provider google \
+  --loc "tabconf" \
+  --username "your_name"
 ```
 
-### Transcribe a YouTube Video
-
-Queue a video via the API:
+With SmallestAI instead:
 
 ```bash
+tstbtc transcribe "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --smallestai \
+  --diarize \
+  --markdown \
+  --summarize \
+  --correct \
+  --llm-provider google \
+  --loc "tabconf" \
+  --username "your_name"
+```
+
+With Whisper (local, no cloud STT key required) — omit both `--deepgram` and `--smallestai`:
+
+```bash
+tstbtc transcribe "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --markdown \
+  --username "your_name"
+```
+
+Other useful commands:
+
+```bash
+# Server management
+tstbtc server start              # start FastAPI server in background
+tstbtc server status             # check if running
+tstbtc server stop               # stop (required before switching STT provider)
+tstbtc server logs --follow      # tail logs live
+
+# Transcribe a local audio file
+tstbtc transcribe "/path/to/file.mp3" --deepgram --username "your_name"
+
+# See all flags
+tstbtc transcribe --help
+```
+
+**Note on switching services:** the server caches the transcription service (Deepgram/Whisper/SmallestAI) after the first request. To switch between them, run `tstbtc server stop` before the next transcription.
+
+Output locations:
+
+| What | Where |
+|------|-------|
+| Markdown transcript | `local_models/<loc>/<slug>.md` |
+| Raw STT output + metadata | `metadata/<loc>/<slug>/` |
+| Database row | `transcripts` table (local Postgres or AWS RDS) |
+
+### HTTP API (advanced)
+
+If you want to call the server directly (e.g. from another service):
+
+```bash
+# Start the server manually
+python -m uvicorn server:app --host 0.0.0.0 --port 8000
+
+# Queue a video
 curl -X POST http://localhost:8000/transcription/add_to_queue/ \
   -F "source=https://www.youtube.com/watch?v=VIDEO_ID" \
   -F "loc=tabconf" \
@@ -149,17 +240,11 @@ curl -X POST http://localhost:8000/transcription/add_to_queue/ \
   -F "correct=true" \
   -F "summarize=true" \
   -F "llm_provider=google"
-```
 
-Start processing:
-
-```bash
+# Start processing
 curl -X POST http://localhost:8000/transcription/start/
-```
 
-Check queue status:
-
-```bash
+# Check queue status
 curl http://localhost:8000/transcription/queue/
 ```
 

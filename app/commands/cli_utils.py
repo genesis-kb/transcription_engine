@@ -272,7 +272,8 @@ def auto_start_server(f=None):
                         # Auto-server is disabled, show the original error
                         raise click.ClickException(
                             "Transcription server is not running. "
-                            "Please start the server and try again, or use --auto-server flag."
+                            "Please start the server with 'tstbtc server start' "
+                            "or re-run without --no-auto-server."
                         )
             except click.ClickException as e:
                 click.echo(str(e), err=True)

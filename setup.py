@@ -40,7 +40,7 @@ setup(
     url="https://github.com/bitcointranscripts/tstbtc",
     py_modules=["transcriber", "server", "transcriber_server"],
     packages=find_packages(),
-    install_requires=[install_requires],
+    install_requires=install_requires,
     extras_require=extras_require,
     python_requires=">=3.10",
     classifiers=[

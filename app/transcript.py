@@ -55,6 +55,14 @@ class Transcript:
             "srt_file": None,
             "dpe_file": None,
         }
+        # Pipeline state tracks per-stage progress for fault tolerance and resumability.
+        # Stages are ordered; any stage can be "pending", "in_progress", "completed",
+        # "failed", or "skipped". The overall key summarises the video's outcome.
+        self.pipeline_state: dict = {
+            "overall": "pending",
+            "failed_at": None,
+            "stages": {},  # populated by Transcription
+        }
 
     def process_source(self, tmp_dir=None):
         tmp_dir = tmp_dir if tmp_dir is not None else tempfile.mkdtemp()

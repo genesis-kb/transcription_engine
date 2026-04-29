@@ -84,14 +84,14 @@ class Deepgram:
             # Add deepgram output file path to transcript's metadata file
             if transcript.metadata_file is not None:
                 # Read existing content of the metadata file
-                with open(transcript.metadata_file) as file:
+                with open(transcript.metadata_file, encoding="utf-8") as file:
                     data = json.load(file)
                 # Add deepgram output
                 data["deepgram_output"] = os.path.basename(
                     transcription_service_output_file
                 )
                 # Write the updated dictionary back to the JSON file
-                with open(transcript.metadata_file, "w") as file:
+                with open(transcript.metadata_file, "w", encoding="utf-8") as file:
                     json.dump(data, file, indent=4)
 
             return transcription_service_output_file
@@ -105,7 +105,8 @@ class Deepgram:
         if not transcript.outputs["transcription_service_output_file"]:
             raise Exception("No 'deepgram_output' found in JSON")
         with open(
-            transcript.outputs["transcription_service_output_file"]
+            transcript.outputs["transcription_service_output_file"],
+            encoding="utf-8",
         ) as outfile:
             transcription_service_output = json.load(outfile)
 
@@ -649,7 +650,8 @@ class Deepgram:
             if not transcript.outputs["transcription_service_output_file"]:
                 raise Exception("No 'deepgram_output' found in JSON")
             with open(
-                transcript.outputs["transcription_service_output_file"]
+                transcript.outputs["transcription_service_output_file"],
+                encoding="utf-8",
             ) as outfile:
                 transcription_service_output = json.load(outfile)
 

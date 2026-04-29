@@ -192,7 +192,7 @@ class GitHubAPIHandler:
                 commit_files = []
                 for file_path in metadata_files:
                     if file_path:
-                        with open(file_path) as file:
+                        with open(file_path, encoding="utf-8") as file:
                             content = file.read()
                         commit_files.append(
                             {

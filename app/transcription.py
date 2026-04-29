@@ -43,9 +43,9 @@ class Transcription:
         needs_review=False,
         include_metadata=True,
         correct=False,
-        llm_provider="openai",
-        llm_correction_model="gpt-4o",
-        llm_summary_model="gpt-4o",
+        llm_correction_model="openai:gpt-4o",
+        llm_summary_model="openai:gpt-4o",
+        llm_metadata_model="gemini:gemini-3-flash-preview",
         no_db=False,
     ):
         self.nocleanup = nocleanup
@@ -92,17 +92,17 @@ class Transcription:
         self.processing_services = []
         # Always run metadata extraction first (uses Gemini)
         if not test_mode:
-            self.processing_services.append(MetadataExtractorService())
+            self.processing_services.append(MetadataExtractorService(model_string=llm_metadata_model))
         if correct:
             self.processing_services.append(
                 CorrectionService(
-                    provider=llm_provider, model=llm_correction_model
+                    model_string=llm_correction_model
                 )
             )
         if summarize:
             self.processing_services.append(
                 SummarizerService(
-                    provider=llm_provider, model=llm_summary_model
+                    model_string=llm_summary_model
                 )
             )
 

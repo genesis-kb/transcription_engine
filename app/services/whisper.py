@@ -60,14 +60,14 @@ class Whisper:
         # Add whisper output file path to transcript's metadata file
         if transcript.metadata_file is not None:
             # Read existing content of the metadata file
-            with open(transcript.metadata_file) as file:
+            with open(transcript.metadata_file, encoding="utf-8") as file:
                 data = json.load(file)
             # Add whisper output
             data["whisper_output"] = os.path.basename(
                 transcription_service_output_file
             )
             # Write the updated dictionary back to the JSON file
-            with open(transcript.metadata_file, "w") as file:
+            with open(transcript.metadata_file, "w", encoding="utf-8") as file:
                 json.dump(data, file, indent=4)
 
         return transcription_service_output_file
@@ -86,7 +86,7 @@ class Whisper:
             type="srt",
         )
         logger.info(f"(whisper) Writing srt to {output_file}...")
-        with open(output_file, "w") as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             for index, segment in enumerate(data["segments"]):
                 f.write(f"{index + 1}\n")
                 f.write(
@@ -136,7 +136,8 @@ class Whisper:
             if not transcript.outputs["transcription_service_output_file"]:
                 raise Exception("No 'whisper_output' found in JSON")
             with open(
-                transcript.outputs["transcription_service_output_file"]
+                transcript.outputs["transcription_service_output_file"],
+                encoding="utf-8",
             ) as outfile:
                 transcription_service_output = json.load(outfile)
 

@@ -118,10 +118,10 @@ class TranscriptExporter(ABC):
         try:
             # Handle different content types based on file extension
             if file_path.endswith(".json") and isinstance(content, dict):
-                with open(file_path, "w") as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(content, f, indent=4)
             else:
-                with open(file_path, "w") as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     f.write(content)
 
             return os.path.abspath(file_path)

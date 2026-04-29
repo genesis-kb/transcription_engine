@@ -1,14 +1,11 @@
 import json
 import re
-import time
 from datetime import datetime, timezone
-
-from google import genai
-from google.genai.types import GenerateContentConfig
 
 from app.config import settings
 from app.logging import get_logger
 from app.services.database_service import get_database_service
+from app.services.llm_service import call_llm
 
 
 logger = get_logger()
@@ -20,7 +17,7 @@ class ContentClassifier:
     def __init__(self):
         self._db = get_database_service()
         self.model = settings.config.get(
-            "classification_model", "gemini-3-flash-preview"
+            "classification_model", "gemini:gemini-3-flash-preview"
         )
         self.confidence_threshold = float(
             settings.config.get("classification_confidence_threshold", "0.7")
@@ -217,24 +214,8 @@ class ContentClassifier:
 
     def _call_llm(self, prompt: str) -> dict:
         """Call the LLM and parse its classification response."""
-        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
-        config = GenerateContentConfig(max_output_tokens=1024)
-
-        for attempt in range(4):
-            try:
-                response = client.models.generate_content(
-                    model=self.model,
-                    contents=prompt,
-                    config=config,
-                )
-                return self._parse_response(response.text)
-            except Exception as e:
-                if ("503" in str(e) or "429" in str(e)) and attempt < 3:
-                    wait = 2 ** attempt * 5
-                    logger.warning(f"Gemini rate limited (attempt {attempt+1}), waiting {wait}s...")
-                    time.sleep(wait)
-                else:
-                    raise
+        response_text = call_llm(self.model, prompt, max_tokens=1024)
+        return self._parse_response(response_text)
 
     @staticmethod
     def _parse_response(response_text: str) -> dict:

@@ -1,12 +1,6 @@
-import time
-
-import openai
-from google import genai
-from google.genai.types import GenerateContentConfig
-
-from app.config import settings
 from app.logging import get_logger
 from app.services.global_tag_manager import GlobalTagManager
+from app.services.llm_service import call_llm
 from app.transcript import Transcript
 
 
@@ -17,19 +11,9 @@ MIN_LENGTH_RATIO = 0.7
 
 
 class CorrectionService:
-    def __init__(self, provider="openai", model="gpt-4o"):
-        self.provider = provider
-        self.model = model
+    def __init__(self, model_string="openai:gpt-4o"):
+        self.model_string = model_string
         self.tag_manager = GlobalTagManager()
-        if self.provider == "openai":
-            self.client = openai
-            self.client.api_key = settings.OPENAI_API_KEY
-        elif self.provider == "google":
-            self._client = genai.Client(api_key=settings.GOOGLE_API_KEY)
-            if self.model == "gpt-4o":  # Default overwrite for google
-                self.model = "gemini-3-flash-preview"
-        else:
-            raise ValueError(f"Unsupported LLM provider: {provider}")
 
     def _split_into_chunks(
         self, text: str, max_size: int = MAX_CHUNK_SIZE
@@ -59,7 +43,7 @@ class CorrectionService:
 
     def process(self, transcript: Transcript, **kwargs):
         logger.info(
-            f"Correcting transcript with {self.provider} (model: {self.model})..."
+            f"Correcting transcript with model: {self.model_string}..."
         )
         keywords = kwargs.get("keywords", [])
 
@@ -90,15 +74,7 @@ class CorrectionService:
             )
 
             try:
-                if self.provider == "openai":
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=[{"role": "user", "content": prompt}],
-                        timeout=300,  # 5 minute timeout
-                    )
-                    corrected_text = response.choices[0].message.content
-                elif self.provider == "google":
-                    corrected_text = self._call_with_retry(prompt, max_tokens=16384)
+                corrected_text = call_llm(self.model_string, prompt, max_tokens=16384)
 
                 # Validate output length — reject truncated responses
                 if len(corrected_text) < len(chunk) * MIN_LENGTH_RATIO:
@@ -124,34 +100,13 @@ class CorrectionService:
                     f"[CORRECTION FALLBACK] Using original text for chunk {i}/{num_chunks}"
                 )
 
-            # Rate limit between chunks to avoid 429/503
-            if self.provider == "google" and i < num_chunks:
-                time.sleep(2)
-
         # Combine all corrected chunks
         transcript.outputs["corrected_text"] = "\n\n".join(corrected_chunks)
         logger.info(
             f"Correction complete. Total corrected length: {len(transcript.outputs['corrected_text'])} chars"
         )
 
-    def _call_with_retry(self, prompt, max_tokens=8192, max_retries=4):
-        """Call Gemini with exponential backoff on 503/429 errors."""
-        config = GenerateContentConfig(max_output_tokens=max_tokens)
-        for attempt in range(max_retries):
-            try:
-                response = self._client.models.generate_content(
-                    model=self.model,
-                    contents=prompt,
-                    config=config,
-                )
-                return response.text
-            except Exception as e:
-                if ("503" in str(e) or "429" in str(e)) and attempt < max_retries - 1:
-                    wait = 2 ** attempt * 5  # 5, 10, 20, 40 seconds
-                    logger.warning(f"Gemini rate limited (attempt {attempt+1}), waiting {wait}s...")
-                    time.sleep(wait)
-                else:
-                    raise
+
 
     def _build_enhanced_prompt(self, text, keywords, metadata, global_context):
         prompt = (

@@ -36,7 +36,7 @@ class DataWriter:
             type="json",
             include_timestamp=include_timestamp,
         )
-        with open(output_file, "w") as json_file:
+        with open(output_file, "w", encoding="utf-8") as json_file:
             json.dump(data, json_file, indent=4)
         return output_file
 

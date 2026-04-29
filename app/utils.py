@@ -24,7 +24,7 @@ def decimal_to_sexagesimal(dec):
 
 def check_if_valid_json(file_path):
     try:
-        with open(file_path) as file:
+        with open(file_path, encoding="utf-8") as file:
             json_content = json.load(file)
         return json_content
     except Exception:

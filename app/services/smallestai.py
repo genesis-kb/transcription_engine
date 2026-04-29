@@ -106,10 +106,10 @@ class SmallestAI:
             logger.info(f"(smallestai) Model output stored at: {output_file}")
 
             if transcript.metadata_file is not None:
-                with open(transcript.metadata_file) as file:
+                with open(transcript.metadata_file, encoding="utf-8") as file:
                     data = json.load(file)
                 data["smallestai_output"] = os.path.basename(output_file)
-                with open(transcript.metadata_file, "w") as file:
+                with open(transcript.metadata_file, "w", encoding="utf-8") as file:
                     json.dump(data, file, indent=4)
 
             return output_file
@@ -302,7 +302,7 @@ class SmallestAI:
         )
         logger.info(f"(smallestai) Writing SRT to {output_file}...")
 
-        with open(output_file, "w") as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             for i, utt in enumerate(utterances, 1):
                 f.write(f"{i}\n")
                 f.write(
@@ -319,7 +319,8 @@ class SmallestAI:
                 raise Exception("No 'smallestai_output' found")
 
             with open(
-                transcript.outputs["transcription_service_output_file"]
+                transcript.outputs["transcription_service_output_file"],
+                encoding="utf-8",
             ) as f:
                 transcription_service_output = json.load(f)
 
@@ -422,10 +423,10 @@ class SmallestAI:
         )
 
         if transcript.metadata_file is not None:
-            with open(transcript.metadata_file) as file:
+            with open(transcript.metadata_file, encoding="utf-8") as file:
                 data = json.load(file)
             data["smallestai_chunks"] = smallestai_chunks
-            with open(transcript.metadata_file, "w") as file:
+            with open(transcript.metadata_file, "w", encoding="utf-8") as file:
                 json.dump(data, file, indent=4)
 
         return transcription_service_output

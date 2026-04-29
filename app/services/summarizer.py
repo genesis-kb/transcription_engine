@@ -1,11 +1,5 @@
-import time
-
-import openai
-from google import genai
-from google.genai.types import GenerateContentConfig
-
-from app.config import settings
 from app.logging import get_logger
+from app.services.llm_service import call_llm
 from app.transcript import Transcript
 
 
@@ -16,18 +10,8 @@ MAX_CHUNK_SIZE = 30000
 
 
 class SummarizerService:
-    def __init__(self, provider="openai", model="gpt-4o"):
-        self.provider = provider
-        self.model = model
-        if self.provider == "openai":
-            self.client = openai
-            self.client.api_key = settings.OPENAI_API_KEY
-        elif self.provider == "google":
-            self._client = genai.Client(api_key=settings.GOOGLE_API_KEY)
-            if self.model == "gpt-4o":  # Default overwrite for google
-                self.model = "gemini-3-flash-preview"
-        else:
-            raise ValueError(f"Unsupported LLM provider: {provider}")
+    def __init__(self, model_string="openai:gpt-4o"):
+        self.model_string = model_string
 
     def _split_into_chunks(
         self, text: str, max_size: int = MAX_CHUNK_SIZE
@@ -57,7 +41,7 @@ class SummarizerService:
 
     def process(self, transcript: Transcript, **kwargs):
         logger.info(
-            f"Summarizing transcript with {self.provider} (model: {self.model})..."
+            f"Summarizing transcript with model: {self.model_string}..."
         )
         text_to_summarize = transcript.outputs.get(
             "corrected_text", transcript.outputs["raw"]
@@ -142,34 +126,9 @@ Provide a comprehensive summary covering the main topics, key arguments, and imp
 {text}"""
 
         try:
-            if self.provider == "openai":
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": prompt}],
-                    timeout=300,  # 5 minute timeout
-                )
-                return response.choices[0].message.content
-            elif self.provider == "google":
-                return self._call_with_retry(prompt, max_tokens=4096)
+            return call_llm(self.model_string, prompt, max_tokens=4096)
         except Exception as e:
             logger.error(f"Error during summarization: {e}")
             return ""
 
-    def _call_with_retry(self, prompt, max_tokens=4096, max_retries=4):
-        """Call Gemini with exponential backoff on 503/429 errors."""
-        config = GenerateContentConfig(max_output_tokens=max_tokens)
-        for attempt in range(max_retries):
-            try:
-                response = self._client.models.generate_content(
-                    model=self.model,
-                    contents=prompt,
-                    config=config,
-                )
-                return response.text
-            except Exception as e:
-                if ("503" in str(e) or "429" in str(e)) and attempt < max_retries - 1:
-                    wait = 2 ** attempt * 5  # 5, 10, 20, 40 seconds
-                    logger.warning(f"Gemini rate limited (attempt {attempt+1}), waiting {wait}s...")
-                    time.sleep(wait)
-                else:
-                    raise
+

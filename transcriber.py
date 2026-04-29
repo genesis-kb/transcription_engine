@@ -217,12 +217,7 @@ correct_transcript = click.option(
     default=settings.config.getboolean("correct", False),
     help="Correct the transcript using the configured LLM provider.",
 )
-llm_provider = click.option(
-    "--llm-provider",
-    type=click.Choice(["openai", "google", "claude"]),
-    default=settings.config.get("llm_provider", "openai"),
-    help="LLM provider for correction and summarization.",
-)
+
 
 no_db = click.option(
     "--no-db",
@@ -302,7 +297,6 @@ add_category = click.option(
 @verbose_logging
 @auto_start_server
 @correct_transcript
-@llm_provider
 @no_db
 def transcribe(
     source: str,
@@ -330,7 +324,6 @@ def transcribe(
     needs_review: bool,
     cutoff_date: str,
     correct: bool,
-    llm_provider: str,
     nocheck: bool,
     no_db: bool,
 ) -> None:
@@ -379,7 +372,6 @@ def transcribe(
         "needs_review": needs_review,
         "cutoff_date": cutoff_date,
         "correct": correct,
-        "llm_provider": llm_provider,
         "nocheck": nocheck,
         "no_db": no_db,
     }

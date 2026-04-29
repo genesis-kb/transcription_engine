@@ -6,9 +6,8 @@ github = False
 save_to_markdown = True
 needs_review = False
 one_sentence_per_line = True
-llm_provider = openai
-llm_correction_model = gpt-4o
-llm_summary_model = gpt-4o
+llm_correction_model = openai:gpt-4o
+llm_summary_model = openai:gpt-4o
 
 [development]
 verbose_logging = True

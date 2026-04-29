@@ -109,10 +109,6 @@ class Settings:
         )
 
     @property
-    def LLM_PROVIDER(self):
-        return os.getenv("LLM_PROVIDER", "openai")
-
-    @property
     def OPENAI_API_KEY(self):
         return self._get_env_variable("OPENAI_API_KEY")
 

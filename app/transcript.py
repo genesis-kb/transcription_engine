@@ -569,63 +569,104 @@ class RSS(Source):
             category=source.category,
             speakers=source.speakers,
             preprocess=source.preprocess,
+            # marks or a id for unique identity of episode
+            guid=source.guid,
         )
         self.type = "rss"
         self.entries = []
         self.__config_source()
 
     def __config_source(self):
+        rss = self.rss_parse()
+        self._process_entry(rss.entries)
+
+    def rss_parse(self):
         try:
             rss = feedparser.parse(self.source_file)
-            self.title = rss.feed.title
-            self.author = rss.feed.author
-            self.logger.info(
-                f"RSS feed detected: {self.title} by {self.author}"
-            )
+            self.extract_feed_metadata(rss)
+            return rss
         except Exception:
             raise Exception(f"Invalid source: {self.source_file}")
-        for entry in rss.entries:
-            enclosure = next(
-                (
-                    link
-                    for link in entry.links
-                    if link.get("rel") == "enclosure"
-                ),
-                None,
-            )
-            if enclosure.type in [
-                "audio/mpeg",
-                "audio/wav",
-                "audio/x-m4a",
-                "audio/mp4",
-            ]:
-                published_date = date(*entry.published_parsed[:3])
-                # Attempt to extract episode information
-                episode = (
-                    int(entry.itunes_episode)
-                    if "itunes_episode" in entry
-                    else None
-                )
 
-                source = Audio(
-                    Source(
-                        source_file=enclosure.href,
-                        loc=self.loc,
-                        local=self.local,
-                        title=entry.title,
-                        date=published_date,
-                        summary=self.summary,
-                        episode=episode,
-                        tags=self.tags,
-                        category=self.category,
-                        speakers=self.speakers,
-                        preprocess=self.preprocess,
-                        link=entry.link,
-                    ),
-                    description=entry.description,
-                )
-                self.entries.append(source)
-            else:
-                self.logger.warning(
-                    f"Invalid source for '{entry.title}'. '{enclosure.type}' not supported for RSS feeds, source skipped."
-                )
+    def extract_feed_metadata(self, rss):
+        self.title = rss.feed.title
+        self.author = rss.feed.author
+        
+        self.logger.info(
+                f"RSS feed detected: {self.title} by {self.author}"
+            )
+        
+    def _process_entry(self, entries):
+        for entry in entries:
+            enclosure = self._get_enclosure(entry)
+
+            if not self.is_supported_audio(enclosure):
+                self._log_invalid_entry(entry, enclosure)
+                continue
+            
+            published_date = self._get_published_date(entry)
+            episode = self._get_episode(entry)
+
+            source = self._build_audio_source(entry, enclosure, published_date, episode)
+
+            self.entries.append(source)
+
+    def _get_enclosure(self, entry):
+        return next(
+            (
+                link
+                for link in entry.links
+                if link.get("rel") == "enclosure"
+            ),
+            None,
+        )
+
+    def is_supported_audio(self, enclosure):
+        if not enclosure:
+            return False
+        
+        supported_types = [
+            "audio/mpeg",
+            "audio/wav",
+            "audio/x-m4a",
+            "audio/mp4",
+        ]
+        return enclosure.get("type") in supported_types
+    
+    def _get_published_date(self, entry):
+        if hasattr(entry, "published_parsed") and entry.published_parsed:
+            return date(*entry.published_parsed[:3])
+        return None
+    
+    def _get_episode(self, entry):
+        if "itunes_episode" in entry:
+            return int(entry.itunes_episode)
+        return None
+    
+    def _build_audio_source(self, entry, enclosure, published_date, episode):
+        return Audio(
+            Source(
+                source_file=enclosure.href,
+                loc=self.loc,
+                local=self.local,
+                title=entry.title,
+                date=published_date,
+                summary=self.summary,
+                episode=episode,
+                tags=self.tags,
+                category=self.category,
+                speakers=self.speakers,
+                preprocess=self.preprocess,
+                link=entry.link,
+                guid=entry.get("guid", None),
+            ),
+            description=entry.description,
+        )  
+    
+    def _log_invalid_entry(self, entry, enclosure):
+
+        enclosure_type = enclosure.type if enclosure else "No enclosure found"
+
+        self.logger.warning(
+            f"Invalid source for '{entry.title}'. '{enclosure_type}' not supported for RSS feeds, source skipped."
+        )

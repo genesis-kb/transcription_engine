@@ -258,3 +258,138 @@ class Transcript(Base):
             if self.updated_at
             else None,
         }
+
+class RSSFeed(Base):
+    __tablename__ = "rss_feeds"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+
+    feed_url = Column(Text, unique=True, nullable=False)
+    title = Column(Text)
+    author = Column(Text)
+    description = Column(Text)
+    category = Column(Text)
+
+    priority = Column(Integer, default=3)
+    is_active = Column(Boolean, default=True)
+
+    last_scanned_at = Column(DateTime(timezone=True))
+
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    episodes = relationship(
+        "RSSEpisode",
+        back_populates="feed",
+        cascade="all, delete-orphan",
+    )
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "feed_url": self.feed_url,
+            "title": self.title,
+            "author": self.author,
+            "description": self.description,
+            "category": self.category,
+            "priority": self.priority,
+            "is_active": self.is_active,
+            "last_scanned_at": self.last_scanned_at.isoformat()
+            if self.last_scanned_at
+            else None,
+        }
+    
+class RSSEpisode(Base):
+    __tablename__ = "rss_episodes"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+
+    guid = Column(Text, unique=True, nullable=False)
+
+    feed_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("rss_feeds.id", ondelete="CASCADE"),
+    )
+
+    title = Column(Text)
+    description = Column(Text)
+
+    audio_url = Column(Text)
+
+    episode_number = Column(Integer)
+
+    published_at = Column(DateTime(timezone=True))
+
+    duration = Column(Integer)
+
+    status = Column(Text, default="pending")
+
+    classification_confidence = Column(Float)
+
+    transcript_id = Column(UUID(as_uuid=True))
+
+    discovered_at = Column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+
+    classified_at = Column(DateTime(timezone=True))
+
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    feed = relationship("RSSFeed", back_populates="episodes")
+
+    def to_dict(self, include_feed=False):
+        d = {
+            "id": str(self.id),
+            "guid": self.guid,
+            "feed_id": str(self.feed_id) if self.feed_id else None,
+            "title": self.title,
+            "description": self.description,
+            "audio_url": self.audio_url,
+            "episode_number": self.episode_number,
+            "published_at": self.published_at.isoformat()
+            if self.published_at
+            else None,
+            "duration": self.duration,
+            "status": self.status,
+            "classification_confidence": self.classification_confidence,
+            "transcript_id": str(self.transcript_id)
+            if self.transcript_id
+            else None,
+            "discovered_at": self.discovered_at.isoformat()
+            if self.discovered_at
+            else None,
+            "classified_at": self.classified_at.isoformat()
+            if self.classified_at
+            else None,
+        }
+
+        if include_feed and self.feed:
+            d["rss_feed"] = {
+                "title": self.feed.title,
+                "author": self.feed.author,
+            }
+        else:
+            d["rss_feed"] = None
+
+        return d

@@ -39,6 +39,9 @@ def discover_providers():
                     _REGISTRY[provider_name] = obj
         except ImportError as e:
             logger.warning(f"Could not load provider module '{module_name}': {e}")
+        except ValueError:
+            # Re-raise validation/collision errors to fail fast
+            raise
         except Exception as e:
             logger.error(f"Error loading provider module '{module_name}': {e}")
 

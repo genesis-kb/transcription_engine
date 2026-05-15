@@ -48,11 +48,13 @@ class Transcription:
         needs_review=False,
         include_metadata=True,
         correct=False,
-        llm_provider=settings.LLM_PROVIDER,
+        llm_provider=None,
         llm_correction_model=None,
         llm_summary_model=None,
         no_db=False,
     ):
+        if llm_provider is None:
+            llm_provider = settings.LLM_PROVIDER
         if llm_correction_model is None:
             llm_correction_model = settings.config.get("llm_correction_model", "gpt-4o")
         if llm_summary_model is None:
@@ -65,6 +67,10 @@ class Transcription:
         self.retry_delay = int(
             settings.config.get("pipeline_retry_delay_seconds", 10)
         )
+        if self.max_retries <= 0:
+            raise ValueError("pipeline_max_retries must be an integer > 0")
+        if self.retry_delay < 0:
+            raise ValueError("pipeline_retry_delay_seconds must be an integer >= 0")
         self._correct_enabled = correct
         self._summarize_enabled = summarize
         self.nocleanup = nocleanup
@@ -201,7 +207,7 @@ class Transcription:
                         f"Cache hit for '{source_file}' — loading metadata from disk, skipping yt_dlp."
                     )
                     return data
-            except Exception as e:
+            except Exception:
                 self.logger.debug(f"Failed to read/parse cached metadata file: {filepath}", exc_info=True)
                 continue
         return None
@@ -385,7 +391,9 @@ class Transcription:
                 category = category or cached.get("categories", category) or []
                 speakers = speakers or cached.get("speakers", speakers) or []
                 chapters = chapters or cached.get("chapters", chapters) or []
-                youtube_metadata = cached.get("youtube", {})
+                youtube_block = cached.get("youtube")
+                if youtube_block:
+                    youtube_metadata = youtube_block
                 summary = summary or cached.get("summary", summary)
 
         source = self._initialize_source(
@@ -539,14 +547,16 @@ class Transcription:
                 self.logger.error(
                     f"[PIPELINE] [{transcript.source.source_file}] Unhandled error: {exc}"
                 )
+                self._persist_pipeline_state(transcript)
 
         if any(t.status == "failed" for t in self.transcripts):
             self.status = "failed"
         elif all(t.status == "completed" for t in self.transcripts):
             self.status = "completed"
-            completed = [t for t in self.transcripts if t.status == "completed"]
-            if self.github and completed:
-                self.push_to_github(completed)
+            
+        completed = [t for t in self.transcripts if t.status == "completed"]
+        if self.github and completed:
+            self.push_to_github(completed)
         return self.transcripts
 
     def _run_pipeline(self, transcript: Transcript, test_transcript=None) -> None:
@@ -571,13 +581,23 @@ class Transcription:
                 )
             t.process_source(t.tmp_dir)
 
+        def ensure_media_available(t: Transcript) -> None:
+            audio_file = getattr(t, "audio_file", None)
+            has_tmp_dir = bool(t.tmp_dir and os.path.isdir(t.tmp_dir))
+            has_audio_file = bool(audio_file and os.path.isfile(audio_file))
+            if not has_tmp_dir or not has_audio_file:
+                do_media(t)
+
         def do_transcription(t: Transcript) -> None:
             if self.test_mode:
                 t.outputs["raw"] = test_transcript or "test-mode"
             else:
+                ensure_media_available(t)
                 self.service.transcribe(t)
-                if self.metadata_extractor:
-                    self.metadata_extractor.process(t)
+
+        def do_metadata_extraction(t: Transcript) -> None:
+            if self.metadata_extractor and not self.test_mode:
+                self.metadata_extractor.process(t)
 
         def do_correction(t: Transcript) -> None:
             self.correction_service.process(t)
@@ -591,11 +611,12 @@ class Transcription:
         # Each tuple: (stage_name, fn, enabled)
         # To add a new stage, just append a tuple here.
         stages: list[tuple[str, Callable, bool]] = [
-            ("media_processing", do_media,        True),
-            ("transcription",    do_transcription, True),
-            ("correction",       do_correction,    self._correct_enabled),
-            ("summarization",    do_summarization, self._summarize_enabled),
-            ("export",           do_export,        True),
+            ("media_processing",    do_media,               True),
+            ("transcription",       do_transcription,       True),
+            ("metadata_extraction", do_metadata_extraction, bool(self.metadata_extractor)),
+            ("correction",          do_correction,          self._correct_enabled),
+            ("summarization",       do_summarization,       self._summarize_enabled),
+            ("export",              do_export,              True),
         ]
 
         # Load any state persisted from a previous run FIRST so that saved
@@ -768,8 +789,12 @@ class Transcription:
             **{k: v for k, v in existing_data.items() if k != "pipeline_state"},
         }
 
-        with open(filepath, "w") as fh:
+        tmp_filepath = filepath + ".tmp"
+        with open(tmp_filepath, "w") as fh:
             json.dump(updated, fh, indent=4)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_filepath, filepath)
 
     def _load_existing_pipeline_state(self, transcript: Transcript) -> None:
         """Load a previously persisted pipeline_state into the transcript.
@@ -797,7 +822,7 @@ class Transcription:
                 if "pipeline_state" in data:
                     saved = data["pipeline_state"]
                     break
-            except Exception as e:
+            except Exception:
                 self.logger.error(f"Failed to read/parse existing pipeline state from {filepath}", exc_info=True)
                 continue
 
@@ -834,7 +859,7 @@ class Transcription:
                 f"[{transcript.title}] Transcription marked complete but no "
                 f"{service_name}_*.json found — raw transcript will be empty."
             )
-            transcript.pipeline_state["stages"]["transcription"]["status"] = "pending"
+            self._mark_stage(transcript, "transcription", "pending")
             return
 
         try:
@@ -849,7 +874,8 @@ class Transcription:
             self.logger.warning(
                 f"[{transcript.title}] Could not load raw transcript from disk: {exc}"
             )
-            transcript.pipeline_state["stages"]["transcription"]["status"] = "pending"
+            transcript.outputs["transcription_service_output_file"] = None
+            self._mark_stage(transcript, "transcription", "pending")
 
     def push_to_github(self, transcripts: list[Transcript]):
         if not self.github_handler:

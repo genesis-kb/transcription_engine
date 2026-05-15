@@ -644,6 +644,7 @@ class Transcription:
                 return
 
         transcript.pipeline_state["overall"] = "completed"
+        transcript.pipeline_state["failed_stage"] = None
         self._persist_pipeline_state(transcript)
         transcript.status = "completed"
         self.logger.info(f"[PIPELINE] [{transcript.title}] → pipeline completed successfully")

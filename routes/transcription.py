@@ -107,7 +107,7 @@ async def add_to_queue(
     speakers: list[str] = Form([]),
     category: list[str] = Form([]),
     github: bool = Form(False),
-    asr_provider: str = Form(settings.ASR_PROVIDER),
+    asr_provider: Optional[str] = Form(None),
     summarize: bool = Form(False),
     diarize: bool = Form(False),
     upload: bool = Form(False),

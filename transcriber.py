@@ -456,7 +456,7 @@ def preprocess(
 
 @cli.command()
 @click.argument(
-    "service", nargs=1, type=click.Choice(["whisper", "deepgram", "smallestai"])
+    "service", nargs=1, type=click.Choice(get_available_providers(), case_sensitive=False)
 )
 @click.argument("metadata_json_file", nargs=1)
 # Options for configuring the transcription postprocess

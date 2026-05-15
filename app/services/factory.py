@@ -1,7 +1,7 @@
 import importlib
 import inspect
 import pkgutil
-from typing import Dict, Any
+from typing import Dict
 
 from app.data_writer import DataWriter
 from app.logging import get_logger
@@ -40,10 +40,15 @@ def discover_providers():
         except ImportError as e:
             logger.warning(f"Could not load provider module '{module_name}': {e}")
         except ValueError:
-            # Re-raise validation/collision errors to fail fast
+            _REGISTRY.clear()
             raise
         except Exception as e:
             logger.error(f"Error loading provider module '{module_name}': {e}")
+
+
+def reset_registry():
+    """Clear the provider registry (primarily for testing)."""
+    _REGISTRY.clear()
 
 
 def get_available_providers() -> list[str]:

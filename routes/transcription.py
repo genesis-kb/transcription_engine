@@ -29,6 +29,15 @@ def get_transcription_instance(**kwargs) -> Transcription:
     if transcription_instance is None:
         transcription_instance = Transcription(**kwargs)
         logger.debug(transcription_instance)
+    else:
+        # Runtime check to prevent silent ignores of mismatched asr_provider
+        requested_provider = kwargs.get("asr_provider")
+        if requested_provider and getattr(transcription_instance, "asr_provider_name", None) != requested_provider:
+            raise ValueError(
+                f"A transcription instance is already running with provider "
+                f"'{transcription_instance.asr_provider_name}'. Cannot queue a task "
+                f"with a different provider ('{requested_provider}')."
+            )
     return transcription_instance
 
 
@@ -163,6 +172,9 @@ async def add_to_queue(
             "status": "queued",
             "message": "Transcription source has been added to the queue.",
         }
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(e)
         traceback.print_exc()

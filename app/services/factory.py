@@ -24,12 +24,30 @@ def discover_providers():
             module = importlib.import_module(f"app.services.providers.{module_name}")
             for name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, BaseTranscriptionService) and obj is not BaseTranscriptionService:
+                    if getattr(obj, "__module__", None) != module.__name__:
+                        continue
+                    
                     provider_name = getattr(obj, "PROVIDER_NAME", module_name.lower())
+                    if provider_name in _REGISTRY and _REGISTRY[provider_name] is not obj:
+                        existing = _REGISTRY[provider_name]
+                        raise ValueError(
+                            f"Provider name collision during registration: "
+                            f"'{provider_name}' is already registered to "
+                            f"{existing.__module__}.{existing.__name__}. "
+                            f"Cannot register {obj.__module__}.{obj.__name__}."
+                        )
                     _REGISTRY[provider_name] = obj
         except ImportError as e:
             logger.warning(f"Could not load provider module '{module_name}': {e}")
         except Exception as e:
             logger.error(f"Error loading provider module '{module_name}': {e}")
+
+
+def get_available_providers() -> list[str]:
+    """Return a list of discovered provider names."""
+    if not _REGISTRY:
+        discover_providers()
+    return list(_REGISTRY.keys())
 
 
 def get_asr_service(provider: str, config: dict, metadata_writer: DataWriter) -> BaseTranscriptionService:

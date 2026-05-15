@@ -111,9 +111,7 @@ async def add_channel(channel: ChannelCreate):
 async def update_channel(channel_id: str, updates: ChannelUpdate):
     """Update a monitored channel."""
     db = _get_db()
-    update_data = {
-        k: v for k, v in updates.model_dump().items() if v is not None
-    }
+    update_data = updates.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update.")
     result = db.update_channel(channel_id, update_data)

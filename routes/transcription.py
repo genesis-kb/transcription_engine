@@ -16,7 +16,7 @@ from fastapi import (
 from app.logging import get_logger
 from app.services.database_service import get_database_service
 from app.transcription import Transcription
-
+from app.config import settings
 
 logger = get_logger()
 router = APIRouter(tags=["Transcription"])
@@ -98,8 +98,7 @@ async def add_to_queue(
     speakers: list[str] = Form([]),
     category: list[str] = Form([]),
     github: bool = Form(False),
-    deepgram: bool = Form(False),
-    smallestai: bool = Form(False),
+    asr_provider: str = Form(settings.ASR_PROVIDER),
     summarize: bool = Form(False),
     diarize: bool = Form(False),
     upload: bool = Form(False),
@@ -125,8 +124,7 @@ async def add_to_queue(
             model=model,
             github=github,
             summarize=summarize,
-            deepgram=deepgram,
-            smallestai=smallestai,
+            asr_provider=asr_provider,
             diarize=diarize,
             upload=upload,
             model_output_dir=model_output_dir,
@@ -244,7 +242,7 @@ async def start(background_tasks: BackgroundTasks):
 
     return {
         "status": "started",
-        "message": "Transcription process has started.",
+        "message": f"Transcription process has started using {transcription.service}.",
     }
 
 

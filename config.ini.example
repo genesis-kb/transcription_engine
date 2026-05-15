@@ -1,5 +1,5 @@
 [DEFAULT]
-deepgram = True
+asr_provider = whisper
 diarize = True
 summarize = False
 github = False

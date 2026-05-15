@@ -91,19 +91,13 @@ whisper = click.option(
     show_default=True,
     help="Select which whisper model to use for the transcription",
 )
-deepgram = click.option(
-    "-D",
-    "--deepgram",
-    is_flag=True,
-    default=False,
-    help="Use deepgram for transcription",
-)
-smallestai_option = click.option(
-    "--smallestai",
-    is_flag=True,
-    default=settings.config.getboolean("smallestai", False),
+asr_provider_option = click.option(
+    "-p",
+    "--asr-provider",
+    type=str,
+    default=settings.ASR_PROVIDER,
     show_default=True,
-    help="Use SmallestAI Pulse STT for transcription",
+    help="Select which ASR provider to use for the transcription (e.g. whisper, deepgram, smallestai)",
 )
 diarize = click.option(
     "-M",
@@ -272,8 +266,7 @@ add_category = click.option(
 @click.argument("source", nargs=1)
 # Available transcription models and services
 @whisper
-@deepgram
-@smallestai_option
+@asr_provider_option
 # Available features for transcription services
 @diarize
 @summarize
@@ -315,8 +308,7 @@ def transcribe(
     category: list,
     username: str,
     github: bool,
-    deepgram: bool,
-    smallestai: bool,
+    asr_provider: str,
     summarize: bool,
     diarize: bool,
     upload: bool,
@@ -348,10 +340,6 @@ def transcribe(
     url = get_transcription_url()
     api_client = APIClient(url)
 
-    # If user didn't pick a service on CLI, fall back to config defaults
-    if not (deepgram or smallestai):
-        deepgram = settings.config.getboolean("deepgram", False)
-        smallestai = settings.config.getboolean("smallestai", False)
     markdown = markdown or settings.config.getboolean("save_to_markdown", False)
 
     data = {
@@ -364,8 +352,7 @@ def transcribe(
         "category": list(category),
         "username": username,
         "github": github,
-        "deepgram": deepgram,
-        "smallestai": smallestai,
+        "asr_provider": asr_provider,
         "summarize": summarize,
         "diarize": diarize,
         "upload": upload,
@@ -499,8 +486,6 @@ def postprocess(
         configure_logger(log_level=logging.INFO)
         utils.check_if_valid_file_path(metadata_json_file)
         transcription = Transcription(
-            deepgram=service == "deepgram",
-            smallestai=service == "smallestai",
             github=github,
             upload=upload,
             username=username,
@@ -508,6 +493,7 @@ def postprocess(
             text_output=text,
             json=json,
             needs_review=needs_review,
+            asr_provider=service,
         )
         logger.info(
             f"Postprocessing {service} transcript from {metadata_json_file}"

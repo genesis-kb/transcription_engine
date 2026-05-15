@@ -8,7 +8,7 @@ from typing import Callable, Optional
 
 import yt_dlp
 
-from app import __version__, application, services, utils
+from app import __version__, application, utils
 from app.config import settings
 from app.data_fetcher import DataFetcher
 from app.data_writer import DataWriter
@@ -32,8 +32,6 @@ class Transcription:
         model="tiny",
         github=False,
         summarize=False,
-        deepgram=False,
-        smallestai=False,
         diarize=False,
         upload=False,
         model_output_dir="local_models/",
@@ -52,6 +50,7 @@ class Transcription:
         llm_correction_model=None,
         llm_summary_model=None,
         no_db=False,
+        asr_provider=settings.ASR_PROVIDER,
     ):
         if llm_provider is None:
             llm_provider = settings.LLM_PROVIDER
@@ -144,16 +143,18 @@ class Transcription:
             )
         )
 
-        if deepgram:
-            self.service = services.Deepgram(
-                summarize, diarize, upload, self.metadata_writer
-            )
-        elif smallestai:
-            self.service = services.SmallestAI(
-                diarize, upload, self.metadata_writer
-            )
-        else:
-            self.service = services.Whisper(model, upload, self.metadata_writer)
+        from app.services.factory import get_asr_service
+        self.service = get_asr_service(
+            provider=asr_provider,
+            config={
+                "summarize": summarize,
+                "diarize": diarize,
+                "upload": upload,
+                "model": model,
+            },
+            metadata_writer=self.metadata_writer,
+        )
+        self.logger.info(f"Initialized ASR service: {self.service}")
 
         self.transcripts: list[Transcript] = []
         self.existing_media = None

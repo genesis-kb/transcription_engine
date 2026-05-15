@@ -44,6 +44,7 @@ def discover_providers():
             raise
         except Exception as e:
             logger.error(f"Error loading provider module '{module_name}': {e}")
+            raise
 
 
 def reset_registry():

@@ -380,7 +380,7 @@ class Transcription:
                 speakers = speakers or cached.get("speakers", speakers) or []
                 chapters = chapters or cached.get("chapters", chapters) or []
                 youtube_metadata = cached.get("youtube", {})
-                summary = summary or cached.get("description", summary)
+                summary = summary or cached.get("summary", summary)
 
         source = self._initialize_source(
             source=Source(
@@ -528,12 +528,13 @@ class Transcription:
             )
             self._run_pipeline(transcript, test_transcript)
 
-        self.status = "completed"
-        completed = [
-            t for t in self.transcripts if t.status == "completed"
-        ]
-        if self.github and completed:
-            self.push_to_github(completed)
+        if any(t.status == "failed" for t in self.transcripts):
+            self.status = "failed"
+        elif all(t.status == "completed" for t in self.transcripts):
+            self.status = "completed"
+            completed = [t for t in self.transcripts if t.status == "completed"]
+            if self.github and completed:
+                self.push_to_github(completed)
         return self.transcripts
 
     def _run_pipeline(self, transcript: Transcript, test_transcript=None) -> None:
@@ -552,9 +553,10 @@ class Transcription:
           any earlier stage failed.
         """
         def do_media(t: Transcript) -> None:
-            t.tmp_dir = self._create_subdirectory(
-                f"transcript-{utils.slugify(t.title)}"
-            )
+            if not t.tmp_dir:
+                t.tmp_dir = self._create_subdirectory(
+                    f"transcript-{utils.slugify(t.title)}"
+                )
             t.process_source(t.tmp_dir)
 
         def do_transcription(t: Transcript) -> None:
@@ -632,7 +634,7 @@ class Transcription:
                 for remaining_name, _, _ in stages[i + 1:]:
                     self._mark_stage(transcript, remaining_name, "skipped")
                 transcript.pipeline_state["overall"] = "failed"
-                transcript.pipeline_state["failed_at"] = name
+                transcript.pipeline_state["failed_stage"] = name
                 self._persist_pipeline_state(transcript)
                 transcript.status = "failed"
                 self.logger.error(
@@ -792,8 +794,8 @@ class Transcription:
         for stage_name, stage_data in saved.get("stages", {}).items():
             transcript.pipeline_state["stages"].setdefault(stage_name, stage_data)
 
-        if saved.get("failed_at"):
-            transcript.pipeline_state["failed_at"] = saved["failed_at"]
+        if saved.get("failed_stage"):
+            transcript.pipeline_state["failed_stage"] = saved["failed_stage"]
 
         self.logger.info(
             f"[PIPELINE] [{transcript.title}] Loaded existing state "
@@ -801,7 +803,7 @@ class Transcription:
         )
 
     def _load_raw_transcript_from_disk(self, transcript: Transcript) -> None:
-        """Populate transcript.outputs['raw'] from the saved smallestai JSON.
+        """Populate transcript.outputs['raw'] from the saved ASR service JSON.
 
         Called when the transcription stage is already 'completed' in the
         pipeline state (resumability path).  Without this, correction and
@@ -811,17 +813,19 @@ class Transcription:
             self.metadata_writer.base_dir,
             transcript.source.output_path_with_title,
         )
-        stt_files = sorted(glob.glob(os.path.join(folder, "smallestai_*.json")))
+        service_name = self.service.__class__.__name__.lower()
+        stt_files = sorted(glob.glob(os.path.join(folder, f"{service_name}_*.json")))
         if not stt_files:
             self.logger.warning(
                 f"[{transcript.title}] Transcription marked complete but no "
-                "smallestai_*.json found — raw transcript will be empty."
+                f"{service_name}_*.json found — raw transcript will be empty."
             )
+            transcript.pipeline_state["stages"]["transcription"]["status"] = "pending"
             return
 
         try:
             transcript.outputs["transcription_service_output_file"] = stt_files[-1]
-            # Reuse SmallestAI's own finalizer to reconstruct the raw text
+            # Reuse service's own finalizer to reconstruct the raw text
             self.service.finalize_transcript(transcript)
             self.logger.info(
                 f"[{transcript.title}] Loaded raw transcript from disk "

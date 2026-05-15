@@ -55,12 +55,13 @@ class Transcript:
             "srt_file": None,
             "dpe_file": None,
         }
+        self.tmp_dir = None
         # Pipeline state tracks per-stage progress for fault tolerance and resumability.
         # Stages are ordered; any stage can be "pending", "in_progress", "completed",
         # "failed", or "skipped". The overall key summarises the video's outcome.
         self.pipeline_state: dict = {
             "overall": "pending",
-            "failed_at": None,
+            "failed_stage": None,
             "stages": {},  # populated by Transcription
         }
 

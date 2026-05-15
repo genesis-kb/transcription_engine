@@ -36,7 +36,7 @@ class Transcription:
         smallestai=False,
         diarize=False,
         upload=False,
-        model_output_dir="transcripts/",
+        model_output_dir="local_models/",
         nocleanup=False,
         json=False,
         markdown=False,
@@ -835,6 +835,7 @@ class Transcription:
             self.logger.warning(
                 f"[{transcript.title}] Could not load raw transcript from disk: {exc}"
             )
+            transcript.pipeline_state["stages"]["transcription"]["status"] = "pending"
 
     def push_to_github(self, transcripts: list[Transcript]):
         if not self.github_handler:

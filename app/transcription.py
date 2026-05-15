@@ -50,7 +50,7 @@ class Transcription:
         llm_correction_model=None,
         llm_summary_model=None,
         no_db=False,
-        asr_provider=settings.ASR_PROVIDER,
+        asr_provider=None,
     ):
         if llm_provider is None:
             llm_provider = settings.LLM_PROVIDER
@@ -72,6 +72,9 @@ class Transcription:
             raise ValueError("pipeline_retry_delay_seconds must be an integer >= 0")
         self._correct_enabled = correct
         self._summarize_enabled = summarize
+
+        asr_provider = asr_provider or settings.ASR_PROVIDER
+        self.asr_provider_name = asr_provider
         self.nocleanup = nocleanup
         self.status = "idle"
         self.test_mode = test_mode

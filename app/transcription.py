@@ -49,10 +49,15 @@ class Transcription:
         include_metadata=True,
         correct=False,
         llm_provider=settings.LLM_PROVIDER,
-        llm_correction_model=settings.config.get("llm_correction_model", "gpt-4o"),
-        llm_summary_model=settings.config.get("llm_summary_model", "gpt-4o"),
+        llm_correction_model=None,
+        llm_summary_model=None,
         no_db=False,
     ):
+        if llm_correction_model is None:
+            llm_correction_model = settings.config.get("llm_correction_model", "gpt-4o")
+        if llm_summary_model is None:
+            llm_summary_model = settings.config.get("llm_summary_model", "gpt-4o")
+
         # Pipeline robustness settings
         self.max_retries = int(
             settings.config.get("pipeline_max_retries", 3)
@@ -196,7 +201,8 @@ class Transcription:
                         f"Cache hit for '{source_file}' — loading metadata from disk, skipping yt_dlp."
                     )
                     return data
-            except Exception:
+            except Exception as e:
+                self.logger.debug(f"Failed to read/parse cached metadata file: {filepath}", exc_info=True)
                 continue
         return None
 
@@ -689,7 +695,7 @@ class Transcription:
                         error=str(exc), attempts=attempt,
                     )
                     return False
-                wait = self.retry_delay * attempt
+                wait = min(self.retry_delay * (2 ** (attempt - 1)), 300)
                 self.logger.warning(
                     f"[PIPELINE] [{transcript.title}] [{stage_name}] → attempt {attempt} failed "
                     f"— retrying in {wait}s. Reason: {exc}"
@@ -791,7 +797,8 @@ class Transcription:
                 if "pipeline_state" in data:
                     saved = data["pipeline_state"]
                     break
-            except Exception:
+            except Exception as e:
+                self.logger.error(f"Failed to read/parse existing pipeline state from {filepath}", exc_info=True)
                 continue
 
         if saved is None:

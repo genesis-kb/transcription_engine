@@ -174,7 +174,7 @@ async def add_to_queue(
         }
     except ValueError as e:
         logger.error(f"Validation error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(e)
         traceback.print_exc()

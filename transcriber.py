@@ -97,7 +97,7 @@ asr_provider_option = click.option(
     type=str,
     default=settings.ASR_PROVIDER,
     show_default=True,
-    help="Select which ASR provider to use for the transcription (e.g. whisper, deepgram, smallestai)",
+    help=f"Select which ASR provider to use for the transcription (e.g. {', '.join(get_available_providers())})",
 )
 diarize = click.option(
     "-M",

@@ -526,7 +526,13 @@ class Transcription:
             self.logger.info(
                 f"Starting pipeline for: {transcript.source.source_file}"
             )
-            self._run_pipeline(transcript, test_transcript)
+            try:
+                self._run_pipeline(transcript, test_transcript)
+            except Exception as exc:
+                transcript.status = "failed"
+                self.logger.error(
+                    f"[PIPELINE] [{transcript.source.source_file}] Unhandled error: {exc}"
+                )
 
         if any(t.status == "failed" for t in self.transcripts):
             self.status = "failed"
@@ -644,6 +650,7 @@ class Transcription:
                 return
 
         transcript.pipeline_state["overall"] = "completed"
+        transcript.pipeline_state["failed_stage"] = None
         self._persist_pipeline_state(transcript)
         transcript.status = "completed"
         self.logger.info(f"[PIPELINE] [{transcript.title}] → pipeline completed successfully")

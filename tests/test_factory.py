@@ -1,6 +1,13 @@
 import pytest
 from unittest.mock import MagicMock
-from app.services.factory import get_asr_service, get_available_providers
+from app.services.factory import get_asr_service, get_available_providers, reset_registry
+from app.services.providers.base import BaseTranscriptionService
+
+@pytest.fixture(autouse=True)
+def clean_registry():
+    reset_registry()
+    yield
+    reset_registry()
 
 def test_get_asr_service_unknown_provider():
     mock_writer = MagicMock()
@@ -12,6 +19,12 @@ def test_get_asr_service_unknown_provider():
     
     assert "Unknown ASR provider: 'does-not-exist'" in error_msg
     # Check that the available providers are listed in the error message
-    # e.g., "Choose from ['deepgram', 'smallestai', 'whisper']"
     for p in available:
         assert p in error_msg
+
+def test_get_asr_service_success():
+    mock_writer = MagicMock()
+    # Assuming "whisper" is always available in the standard install
+    service = get_asr_service("whisper", {}, mock_writer)
+    assert isinstance(service, BaseTranscriptionService)
+    assert service.__class__.PROVIDER_NAME == "whisper"

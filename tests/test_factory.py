@@ -22,9 +22,17 @@ def test_get_asr_service_unknown_provider():
     for p in available:
         assert p in error_msg
 
-def test_get_asr_service_success():
+def test_get_asr_service_success(monkeypatch):
     mock_writer = MagicMock()
-    # Assuming "whisper" is always available in the standard install
-    service = get_asr_service("whisper", {}, mock_writer)
+    providers = get_available_providers()
+    if not providers:
+        pytest.fail("No ASR providers discovered")
+    provider_name = providers[0]
+    
+    # Mock environment variables for providers that require them on init
+    if provider_name == "deepgram":
+        monkeypatch.setenv("DEEPGRAM_API_KEY", "dummy_key")
+        
+    service = get_asr_service(provider_name, {}, mock_writer)
     assert isinstance(service, BaseTranscriptionService)
-    assert service.__class__.PROVIDER_NAME == "whisper"
+    assert service.__class__.PROVIDER_NAME == provider_name

@@ -6,7 +6,7 @@ from sqlalchemy.orm import joinedload
 
 from app.database import get_session, is_db_configured
 from app.logging import get_logger
-from app.models import ContentItem, ContentItemSpeaker, ContentSource, PipelineRun, Speaker, Summary, Transcript
+from app.models import ContentItem, ContentItemSpeaker, ContentSource, PipelineRun, Speaker, Summary, Transcript, YouTubeComment
 
 logger = get_logger()
 
@@ -542,6 +542,101 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Failed to list pipeline runs: {e}")
             return []
+
+    # =========================================================================
+    # YouTube Comments (Auto-Commenter)
+    # =========================================================================
+
+    def save_yt_comment(self, comment_data: dict) -> Optional[dict]:
+        """Insert a new YouTube comment record."""
+        if not self.is_available:
+            return None
+        try:
+            with get_session() as session:
+                obj = YouTubeComment(**comment_data)
+                session.add(obj)
+                session.flush()
+                return obj.to_dict()
+        except Exception as e:
+            logger.error(f"Failed to save YouTube comment: {e}")
+            return None
+
+    def get_yt_comment_by_video_id(self, video_id: str) -> Optional[dict]:
+        """Look up a posted comment by YouTube video ID."""
+        if not self.is_available:
+            return None
+        try:
+            with get_session() as session:
+                obj = (
+                    session.query(YouTubeComment)
+                    .filter_by(video_id=video_id, status="posted")
+                    .first()
+                )
+                return obj.to_dict() if obj else None
+        except Exception as e:
+            logger.error(f"Failed to get comment for video {video_id}: {e}")
+            return None
+
+    def update_yt_comment_status(
+        self, comment_db_id: str, status: str
+    ) -> Optional[dict]:
+        """Update the status of a comment record (e.g. 'deleted')."""
+        if not self.is_available:
+            return None
+        try:
+            with get_session() as session:
+                obj = (
+                    session.query(YouTubeComment)
+                    .filter_by(id=comment_db_id)
+                    .first()
+                )
+                if not obj:
+                    return None
+                obj.status = status
+                session.flush()
+                return obj.to_dict()
+        except Exception as e:
+            logger.error(f"Failed to update comment status: {e}")
+            return None
+
+    def list_yt_comments(
+        self, limit: int = 50, offset: int = 0
+    ) -> list:
+        """List all YouTube comment records."""
+        if not self.is_available:
+            return []
+        try:
+            with get_session() as session:
+                objs = (
+                    session.query(YouTubeComment)
+                    .order_by(YouTubeComment.created_at.desc())
+                    .offset(offset)
+                    .limit(limit)
+                    .all()
+                )
+                return [obj.to_dict() for obj in objs]
+        except Exception as e:
+            logger.error(f"Failed to list YouTube comments: {e}")
+            return []
+
+    def get_transcript_by_video_id(self, video_id: str) -> Optional[dict]:
+        """Look up a transcript by YouTube video ID (matches media_url)."""
+        if not self.is_available:
+            return None
+        try:
+            with get_session() as session:
+                # media_url typically contains the full YouTube URL
+                obj = (
+                    session.query(Transcript)
+                    .filter(
+                        Transcript.media_url.ilike(f"%{video_id}%")
+                    )
+                    .first()
+                )
+                return obj.to_dict() if obj else None
+        except Exception as e:
+            logger.error(f"Failed to look up transcript for video {video_id}: {e}")
+            return None
 
 
 def get_database_service() -> DatabaseService:

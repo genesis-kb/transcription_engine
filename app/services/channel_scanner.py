@@ -111,7 +111,8 @@ class ChannelScanner:
             logger.error(f"Channel {channel['name']} is missing yt_channel_id in config.")
             return 0
 
-        max_results = int(settings.config.get("channel_scan_max_results", "50"))
+        # Fetch up to 20 recent videos, then we will take 7 new ones
+        max_results = 20 
 
         # Build search request
         search_params = {
@@ -146,6 +147,9 @@ class ChannelScanner:
 
         existing = self._db.get_existing_item_external_ids(channel_db_id, video_ids)
         new_ids = [vid for vid in video_ids if vid not in existing]
+
+        # Limit to 7 new videos
+        new_ids = new_ids[:7]
 
         if not new_ids:
             logger.info(

@@ -27,7 +27,12 @@ psycopg2-binary>=2.9.0
 google-genai>=0.8.0
 google-generativeai>=0.3.2
 google-api-python-client>=2.100.0
+<<<<<<< HEAD
 pydub>=0.25
 audioop-lts>=0.2; python_version >= '3.13'
 num2words>=0.5.13
 nltk>=3.9.4
+=======
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.2.0
+>>>>>>> 5db88f5 (WIP: yt-commenter changes)

@@ -159,6 +159,14 @@ class Settings:
     def GEMMA_MODEL(self):
         return os.getenv("GEMMA_MODEL", "gemma3:4b")
 
+    @property
+    def YOUTUBE_CLIENT_SECRETS_FILE(self):
+        return os.getenv("YOUTUBE_CLIENT_SECRETS_FILE", "client_secrets.json")
+
+    @property
+    def YOUTUBE_OAUTH_TOKEN_FILE(self):
+        return os.getenv("YOUTUBE_OAUTH_TOKEN_FILE", "yt_oauth_token.json")
+
 
 # Initialize the Settings class and expose an instance
 settings = Settings()

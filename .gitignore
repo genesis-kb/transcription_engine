@@ -115,6 +115,10 @@ venv.bak/
 # Configurations
 config.ini
 
+# YouTube OAuth secrets
+client_secrets.json
+yt_oauth_token.json
+
 # Spyder project settings
 .spyderproject
 .spyproject

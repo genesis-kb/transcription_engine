@@ -132,6 +132,8 @@ class IngestionService:
             "diarize": True,
             "markdown": True,
             "correct": True,
+            "summarize": True,
+            "llm_provider": "google",
             "username": "ingestion_bot",
         }
 

@@ -1,6 +1,6 @@
 import yaml
 
-from app import application
+from app import __version__
 
 
 def check_md_file(
@@ -56,7 +56,7 @@ def check_md_file(
     # Check fields
     assert (
         fields["transcript_by"]
-        == f"{transcript_by} via tstbtc v{application.__version__}"
+        == f"{transcript_by} via tstbtc v{__version__}"
     ), "Incorrect transcript_by field"
 
     if not local:

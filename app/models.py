@@ -1,15 +1,22 @@
-"""SQLAlchemy ORM models for the transcription engine database."""
+"""SQLAlchemy ORM models for the transcription engine database.
 
-from datetime import datetime, timezone
+New multi-source, platform-agnostic schema (v2).
+Tables: taxonomies, content_sources, content_items, speakers,
+        content_item_speakers, transcripts, summaries,
+        external_publications, pipeline_runs.
+"""
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
+    Date,
     DateTime,
-    Float,
     ForeignKey,
+    Index,
     Integer,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
@@ -20,192 +27,274 @@ class Base(DeclarativeBase):
     pass
 
 
-class YouTubeChannel(Base):
-    __tablename__ = "youtube_channels"
+# =========================================================================
+# 1. TAXONOMIES — The Filter Engine
+# =========================================================================
+
+
+class Taxonomy(Base):
+    """Hierarchical taxonomy for conferences, topics, tags, series."""
+
+    __tablename__ = "taxonomies"
 
     id = Column(
         UUID(as_uuid=True),
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    channel_id = Column(Text, unique=True, nullable=False)
-    channel_name = Column(Text, nullable=False)
-    channel_url = Column(Text)
-    description = Column(Text)
-    category = Column(Text)
-    priority = Column(Integer, default=3)
-    is_active = Column(Boolean, default=True)
-    last_scanned_at = Column(DateTime(timezone=True))
+    type = Column(Text, nullable=False)  # 'conference', 'topic', 'tag', 'series'
+    name = Column(Text, nullable=False)
+    slug = Column(Text, nullable=False)
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("taxonomies.id"))
+    meta = Column("metadata", JSONB, server_default=text("'{}'::jsonb"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
-    updated_at = Column(
-        DateTime(timezone=True),
-        server_default=text("now()"),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )
 
-    videos = relationship(
-        "YouTubeVideo", back_populates="channel", cascade="all, delete-orphan"
+    parent = relationship("Taxonomy", remote_side=[id], backref="children")
+
+    __table_args__ = (
+        UniqueConstraint("type", "slug", name="uq_taxonomies_type_slug"),
     )
-    ingestion_runs = relationship("IngestionRun", back_populates="channel")
 
     def to_dict(self):
         return {
             "id": str(self.id),
-            "channel_id": self.channel_id,
-            "channel_name": self.channel_name,
-            "channel_url": self.channel_url,
-            "description": self.description,
-            "category": self.category,
-            "priority": self.priority,
-            "is_active": self.is_active,
-            "last_scanned_at": self.last_scanned_at.isoformat()
-            if self.last_scanned_at
-            else None,
+            "type": self.type,
+            "name": self.name,
+            "slug": self.slug,
+            "parent_id": str(self.parent_id) if self.parent_id else None,
+            "metadata": self.meta or {},
             "created_at": self.created_at.isoformat()
             if self.created_at
-            else None,
-            "updated_at": self.updated_at.isoformat()
-            if self.updated_at
             else None,
         }
 
 
-class YouTubeVideo(Base):
-    __tablename__ = "youtube_videos"
+# =========================================================================
+# 2. CONTENT SOURCES — The Registry
+# =========================================================================
+
+
+class ContentSource(Base):
+    """Where content comes from: YouTube channels, scrapers, RSS, manual."""
+
+    __tablename__ = "content_sources"
 
     id = Column(
         UUID(as_uuid=True),
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    video_id = Column(Text, unique=True, nullable=False)
-    channel_id = Column(
+    name = Column(Text, nullable=False)
+    slug = Column(Text, unique=True, nullable=False)
+    source_type = Column(Text, nullable=False)  # 'youtube', 'scraper', 'rss', 'manual'
+    base_url = Column(Text)
+    config = Column(JSONB, server_default=text("'{}'::jsonb"))
+    is_active = Column(Boolean, server_default=text("true"))
+    last_run_status = Column(Text)
+    last_run_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("youtube_channels.id", ondelete="CASCADE"),
+        ForeignKey("pipeline_runs.id", use_alter=True, name="fk_sources_last_run"),
     )
-    title = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+    items = relationship(
+        "ContentItem", back_populates="source", cascade="all, delete-orphan"
+    )
+    pipeline_runs = relationship(
+        "PipelineRun",
+        back_populates="source",
+        foreign_keys="PipelineRun.source_id",
+    )
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "slug": self.slug,
+            "source_type": self.source_type,
+            "base_url": self.base_url,
+            "config": self.config or {},
+            "is_active": self.is_active,
+            "last_run_status": self.last_run_status,
+            "last_run_id": str(self.last_run_id) if self.last_run_id else None,
+            "created_at": self.created_at.isoformat()
+            if self.created_at
+            else None,
+        }
+
+
+# =========================================================================
+# 3. CONTENT ITEMS — The Hub
+# =========================================================================
+
+
+class ContentItem(Base):
+    """Every piece of discovered content: video, article, email, post."""
+
+    __tablename__ = "content_items"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    source_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("content_sources.id"),
+        nullable=False,
+    )
+    external_id = Column(Text, nullable=False)
+    title = Column(Text, nullable=False)
     description = Column(Text)
+    content_type = Column(Text, nullable=False)  # 'video', 'audio', 'text'
+    url = Column(Text, unique=True)
     published_at = Column(DateTime(timezone=True))
-    duration = Column(Integer)
-    tags = Column(ARRAY(Text), default=[])
-    thumbnail_url = Column(Text)
-    view_count = Column(Integer)
-    is_technical = Column(Boolean)
-    classification_reason = Column(Text)
-    classification_confidence = Column(Float)
-    status = Column(Text, default="pending")
-    transcript_id = Column(UUID(as_uuid=True))
+    event_date = Column(Date)
+    event_id = Column(UUID(as_uuid=True), ForeignKey("taxonomies.id"))
+    status = Column(
+        Text, nullable=False, server_default=text("'discovered'")
+    )
+    technical_score = Column(Integer)  # 1-5
+    source_metadata = Column(JSONB, server_default=text("'{}'::jsonb"))
     discovered_at = Column(
         DateTime(timezone=True), server_default=text("now()")
     )
-    classified_at = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
-    updated_at = Column(
-        DateTime(timezone=True),
-        server_default=text("now()"),
-        onupdate=lambda: datetime.now(timezone.utc),
+
+    source = relationship("ContentSource", back_populates="items")
+    event = relationship("Taxonomy")
+    transcripts = relationship(
+        "Transcript",
+        back_populates="content_item",
+        cascade="all, delete-orphan",
+    )
+    speaker_links = relationship(
+        "ContentItemSpeaker",
+        back_populates="content_item",
+        cascade="all, delete-orphan",
+    )
+    publications = relationship(
+        "ExternalPublication",
+        back_populates="content_item",
+        cascade="all, delete-orphan",
     )
 
-    channel = relationship("YouTubeChannel", back_populates="videos")
+    __table_args__ = (
+        UniqueConstraint(
+            "source_id",
+            "external_id",
+            name="uq_content_items_source_external",
+        ),
+        CheckConstraint(
+            "technical_score BETWEEN 1 AND 5",
+            name="ck_technical_score_range",
+        ),
+    )
 
-    def to_dict(self, include_channel=False):
+    def to_dict(self, include_source=False):
         d = {
             "id": str(self.id),
-            "video_id": self.video_id,
-            "channel_id": str(self.channel_id) if self.channel_id else None,
+            "source_id": str(self.source_id) if self.source_id else None,
+            "external_id": self.external_id,
             "title": self.title,
             "description": self.description,
+            "content_type": self.content_type,
+            "url": self.url,
             "published_at": self.published_at.isoformat()
             if self.published_at
             else None,
-            "duration": self.duration,
-            "tags": self.tags or [],
-            "thumbnail_url": self.thumbnail_url,
-            "view_count": self.view_count,
-            "is_technical": self.is_technical,
-            "classification_reason": self.classification_reason,
-            "classification_confidence": self.classification_confidence,
-            "status": self.status,
-            "transcript_id": str(self.transcript_id)
-            if self.transcript_id
+            "event_date": self.event_date.isoformat()
+            if self.event_date
             else None,
+            "event_id": str(self.event_id) if self.event_id else None,
+            "status": self.status,
+            "technical_score": self.technical_score,
+            "source_metadata": self.source_metadata or {},
             "discovered_at": self.discovered_at.isoformat()
             if self.discovered_at
             else None,
-            "classified_at": self.classified_at.isoformat()
-            if self.classified_at
-            else None,
-            "created_at": self.created_at.isoformat()
-            if self.created_at
-            else None,
-            "updated_at": self.updated_at.isoformat()
-            if self.updated_at
-            else None,
         }
-        if include_channel and self.channel:
-            d["youtube_channels"] = {
-                "channel_name": self.channel.channel_name,
-                "category": self.channel.category,
+        if include_source and self.source:
+            d["content_source"] = {
+                "name": self.source.name,
+                "source_type": self.source.source_type,
+                "slug": self.source.slug,
             }
         else:
-            d["youtube_channels"] = None
+            d["content_source"] = None
         return d
 
 
-class IngestionRun(Base):
-    __tablename__ = "ingestion_runs"
+# =========================================================================
+# 4. SPEAKERS & ATTRIBUTION
+# =========================================================================
+
+
+class Speaker(Base):
+    """Normalised speaker/author profiles for cross-referencing."""
+
+    __tablename__ = "speakers"
 
     id = Column(
         UUID(as_uuid=True),
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    run_type = Column(Text, nullable=False)
-    channel_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("youtube_channels.id", ondelete="SET NULL"),
-    )
-    videos_discovered = Column(Integer, default=0)
-    videos_classified = Column(Integer, default=0)
-    videos_approved = Column(Integer, default=0)
-    videos_rejected = Column(Integer, default=0)
-    errors = Column(JSONB, default=[])
-    started_at = Column(DateTime(timezone=True))
-    completed_at = Column(DateTime(timezone=True))
+    name = Column(Text, nullable=False)
+    slug = Column(Text, unique=True, nullable=False)
+    aliases = Column(ARRAY(Text), server_default=text("'{}'"))
+    bio = Column(Text)
+    thumbnail = Column(Text)
+    links = Column(JSONB, server_default=text("'{}'::jsonb"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
 
-    channel = relationship("YouTubeChannel", back_populates="ingestion_runs")
+    content_item_links = relationship(
+        "ContentItemSpeaker", back_populates="speaker"
+    )
 
-    def to_dict(self, include_channel=False):
-        d = {
+    def to_dict(self):
+        return {
             "id": str(self.id),
-            "run_type": self.run_type,
-            "channel_id": str(self.channel_id) if self.channel_id else None,
-            "videos_discovered": self.videos_discovered,
-            "videos_classified": self.videos_classified,
-            "videos_approved": self.videos_approved,
-            "videos_rejected": self.videos_rejected,
-            "errors": self.errors or [],
-            "started_at": self.started_at.isoformat()
-            if self.started_at
-            else None,
-            "completed_at": self.completed_at.isoformat()
-            if self.completed_at
-            else None,
+            "name": self.name,
+            "slug": self.slug,
+            "aliases": self.aliases or [],
+            "bio": self.bio,
+            "thumbnail": self.thumbnail,
+            "links": self.links or {},
             "created_at": self.created_at.isoformat()
             if self.created_at
             else None,
         }
-        if include_channel and self.channel:
-            d["youtube_channels"] = {
-                "channel_name": self.channel.channel_name,
-            }
-        else:
-            d["youtube_channels"] = None
-        return d
+
+
+class ContentItemSpeaker(Base):
+    """M:N junction linking speakers to content items."""
+
+    __tablename__ = "content_item_speakers"
+
+    content_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("content_items.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    speaker_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("speakers.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    role = Column(Text, server_default=text("'speaker'"))
+
+    content_item = relationship("ContentItem", back_populates="speaker_links")
+    speaker = relationship("Speaker", back_populates="content_item_links")
+
+
+# =========================================================================
+# 5. TRANSCRIPTS — Version Controlled
+# =========================================================================
 
 
 class Transcript(Base):
+    """STT output with version control. is_current=true marks the active version."""
+
     __tablename__ = "transcripts"
 
     id = Column(
@@ -213,48 +302,186 @@ class Transcript(Base):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    title = Column(Text)
-    loc = Column(Text)
-    event_date = Column(Text)
-    speakers = Column(ARRAY(Text), default=[])
-    tags = Column(ARRAY(Text), default=[])
-    categories = Column(ARRAY(Text), default=[])
+    content_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("content_items.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    is_current = Column(Boolean, server_default=text("false"))
+    version = Column(Integer, server_default=text("1"))
     raw_text = Column(Text)
     corrected_text = Column(Text)
-    summary = Column(Text)
-    media_url = Column(Text)
-    status = Column(Text)
-    conference = Column(Text)
-    topics = Column(ARRAY(Text), default=[])
-    channel_name = Column(Text)
+    stt_model = Column(Text)
+    correction_model = Column(Text)
+    duration_seconds = Column(Integer)
+    word_count = Column(Integer)
+    chapters = Column(JSONB, server_default=text("'[]'::jsonb"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
-    updated_at = Column(
-        DateTime(timezone=True),
-        server_default=text("now()"),
-        onupdate=lambda: datetime.now(timezone.utc),
+
+    content_item = relationship("ContentItem", back_populates="transcripts")
+    summaries = relationship(
+        "Summary",
+        back_populates="transcript",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_single_active_transcript",
+            "content_item_id",
+            unique=True,
+            postgresql_where=text("is_current = true"),
+        ),
     )
 
     def to_dict(self):
         return {
             "id": str(self.id),
-            "title": self.title,
-            "loc": self.loc,
-            "event_date": self.event_date,
-            "speakers": self.speakers or [],
-            "tags": self.tags or [],
-            "categories": self.categories or [],
+            "content_item_id": str(self.content_item_id)
+            if self.content_item_id
+            else None,
+            "is_current": self.is_current,
+            "version": self.version,
             "raw_text": self.raw_text,
             "corrected_text": self.corrected_text,
-            "summary": self.summary,
-            "media_url": self.media_url,
-            "status": self.status,
-            "conference": self.conference,
-            "topics": self.topics or [],
-            "channel_name": self.channel_name,
+            "stt_model": self.stt_model,
+            "correction_model": self.correction_model,
+            "duration_seconds": self.duration_seconds,
+            "word_count": self.word_count,
+            "chapters": self.chapters or [],
             "created_at": self.created_at.isoformat()
             if self.created_at
             else None,
-            "updated_at": self.updated_at.isoformat()
-            if self.updated_at
+        }
+
+
+# =========================================================================
+# 6. SUMMARIES
+# =========================================================================
+
+
+class Summary(Base):
+    """LLM-generated summaries in multiple formats per transcript."""
+
+    __tablename__ = "summaries"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    transcript_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("transcripts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    summary_type = Column(Text, nullable=False)  # 'tldr', 'technical', 'newsletter'
+    content = Column(Text, nullable=False)
+    model_used = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+    transcript = relationship("Transcript", back_populates="summaries")
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "transcript_id": str(self.transcript_id)
+            if self.transcript_id
             else None,
+            "summary_type": self.summary_type,
+            "content": self.content,
+            "model_used": self.model_used,
+            "created_at": self.created_at.isoformat()
+            if self.created_at
+            else None,
+        }
+
+
+# =========================================================================
+# 7. EXTERNAL PUBLICATIONS — Cross-platform distribution
+# =========================================================================
+
+
+class ExternalPublication(Base):
+    """Tracks content published to external platforms (YT comments, tweets, etc.)."""
+
+    __tablename__ = "external_publications"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    content_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("content_items.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    platform = Column(Text, nullable=False)  # 'youtube', 'twitter', etc.
+    external_pub_id = Column(Text)  # YT comment thread ID, tweet ID, etc.
+    pub_url = Column(Text)
+    status = Column(Text, server_default=text("'pending'"))
+    last_error = Column(Text)
+    published_at = Column(DateTime(timezone=True))
+
+    content_item = relationship("ContentItem", back_populates="publications")
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "content_item_id": str(self.content_item_id)
+            if self.content_item_id
+            else None,
+            "platform": self.platform,
+            "external_pub_id": self.external_pub_id,
+            "pub_url": self.pub_url,
+            "status": self.status,
+            "last_error": self.last_error,
+            "published_at": self.published_at.isoformat()
+            if self.published_at
+            else None,
+        }
+
+
+# =========================================================================
+# 8. PIPELINE RUNS — Audit log
+# =========================================================================
+
+
+class PipelineRun(Base):
+    """Macro-level audit log for pipeline executions."""
+
+    __tablename__ = "pipeline_runs"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    source_id = Column(
+        UUID(as_uuid=True), ForeignKey("content_sources.id")
+    )
+    started_at = Column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+    completed_at = Column(DateTime(timezone=True))
+    status = Column(Text)  # 'success', 'failed', 'partial'
+
+    source = relationship(
+        "ContentSource",
+        back_populates="pipeline_runs",
+        foreign_keys=[source_id],
+    )
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "source_id": str(self.source_id) if self.source_id else None,
+            "started_at": self.started_at.isoformat()
+            if self.started_at
+            else None,
+            "completed_at": self.completed_at.isoformat()
+            if self.completed_at
+            else None,
+            "status": self.status,
         }

@@ -31,14 +31,15 @@ def get_transcription_instance(**kwargs) -> Transcription:
         logger.debug(transcription_instance)
     else:
         # Runtime check to prevent silent ignores of mismatched asr_provider
-        requested_provider = kwargs.get("asr_provider")
-        effective_requested_provider = requested_provider or settings.ASR_PROVIDER
-        if getattr(transcription_instance, "asr_provider_name", None) != effective_requested_provider:
-            raise ValueError(
-                f"A transcription instance is already running with provider "
-                f"'{transcription_instance.asr_provider_name}'. Cannot queue a task "
-                f"with a different provider ('{effective_requested_provider}')."
-            )
+        if "asr_provider" in kwargs:
+            requested_provider = kwargs.get("asr_provider")
+            effective_requested_provider = requested_provider or settings.ASR_PROVIDER
+            if getattr(transcription_instance, "asr_provider_name", None) != effective_requested_provider:
+                raise ValueError(
+                    f"A transcription instance is already running with provider "
+                    f"'{transcription_instance.asr_provider_name}'. Cannot queue a task "
+                    f"with a different provider ('{effective_requested_provider}')."
+                )
     return transcription_instance
 
 

@@ -7,6 +7,10 @@ import argparse
 from datetime import datetime, timezone
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
 
 # Add project root to path so we can import from app
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -46,17 +50,17 @@ def run_migration(dry_run=False):
                 logger.info("Old tables not found (or already migrated).")
                 if not dry_run:
                     logger.info("Running Base.metadata.create_all to ensure tables exist...")
-                    Base.metadata.create_all(engine)
+                    Base.metadata.create_all(conn)
                 return
 
             # 2. Rename old tables to prevent conflicts with new models
             logger.info("Renaming old tables...")
             rename_sqls = [
-                "ALTER TABLE youtube_channels RENAME TO old_youtube_channels;",
-                "ALTER TABLE youtube_videos RENAME TO old_youtube_videos;",
-                "ALTER TABLE transcripts RENAME TO old_transcripts;",
-                "ALTER TABLE ingestion_runs RENAME TO old_ingestion_runs;",
-                "ALTER TABLE yt_comments RENAME TO old_yt_comments;"
+                "ALTER TABLE IF EXISTS youtube_channels RENAME TO old_youtube_channels;",
+                "ALTER TABLE IF EXISTS youtube_videos RENAME TO old_youtube_videos;",
+                "ALTER TABLE IF EXISTS transcripts RENAME TO old_transcripts;",
+                "ALTER TABLE IF EXISTS ingestion_runs RENAME TO old_ingestion_runs;",
+                "ALTER TABLE IF EXISTS yt_comments RENAME TO old_yt_comments;"
             ]
             for sql in rename_sqls:
                 if not dry_run:
@@ -67,9 +71,9 @@ def run_migration(dry_run=False):
             # 3. Create new schema tables
             if not dry_run:
                 logger.info("Creating new tables...")
-                Base.metadata.create_all(engine)
+                Base.metadata.create_all(conn)
             else:
-                logger.info("DRY RUN: Base.metadata.create_all(engine)")
+                logger.info("DRY RUN: Base.metadata.create_all(conn)")
 
             # 4. Migrate Data
             logger.info("Migrating data from old_youtube_channels -> content_sources...")
@@ -217,32 +221,36 @@ def run_migration(dry_run=False):
                 logger.info(f"DRY RUN: {migrate_runs_sql}")
 
             logger.info("Migrating data from old_yt_comments -> external_publications...")
-            migrate_comments_sql = """
-                INSERT INTO external_publications (id, content_item_id, platform, external_pub_id, status, published_at)
-                SELECT 
-                    yc.id,
-                    ci.id,
-                    'youtube',
-                    yc.comment_id,
-                    yc.status,
-                    yc.posted_at
-                FROM old_yt_comments yc
-                JOIN content_items ci ON ci.external_id = yc.video_id;
-            """
-            if not dry_run:
-                res = conn.execute(text(migrate_comments_sql))
-                logger.info(f"Migrated {res.rowcount} external publications.")
+            has_yt_comments = conn.execute(text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'old_yt_comments')")).scalar()
+            if has_yt_comments:
+                migrate_comments_sql = """
+                    INSERT INTO external_publications (id, content_item_id, platform, external_pub_id, status, published_at)
+                    SELECT 
+                        yc.id,
+                        ci.id,
+                        'youtube',
+                        yc.comment_id,
+                        yc.status,
+                        yc.posted_at
+                    FROM old_yt_comments yc
+                    JOIN content_items ci ON ci.external_id = yc.video_id;
+                """
+                if not dry_run:
+                    res = conn.execute(text(migrate_comments_sql))
+                    logger.info(f"Migrated {res.rowcount} external publications.")
+                else:
+                    logger.info(f"DRY RUN: {migrate_comments_sql}")
             else:
-                logger.info(f"DRY RUN: {migrate_comments_sql}")
+                logger.info("Table old_yt_comments does not exist, skipping.")
 
             # 5. Drop old tables
             logger.info("Dropping old tables...")
             drop_sqls = [
-                "DROP TABLE old_yt_comments CASCADE;",
-                "DROP TABLE old_ingestion_runs CASCADE;",
-                "DROP TABLE old_transcripts CASCADE;",
-                "DROP TABLE old_youtube_videos CASCADE;",
-                "DROP TABLE old_youtube_channels CASCADE;"
+                "DROP TABLE IF EXISTS old_yt_comments CASCADE;",
+                "DROP TABLE IF EXISTS old_ingestion_runs CASCADE;",
+                "DROP TABLE IF EXISTS old_transcripts CASCADE;",
+                "DROP TABLE IF EXISTS old_youtube_videos CASCADE;",
+                "DROP TABLE IF EXISTS old_youtube_channels CASCADE;"
             ]
             for sql in drop_sqls:
                 if not dry_run:

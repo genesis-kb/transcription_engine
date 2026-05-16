@@ -106,6 +106,15 @@ class ContentSource(Base):
         foreign_keys="PipelineRun.source_id",
     )
 
+    __table_args__ = (
+        Index("idx_sources_type", "source_type"),
+        Index(
+            "idx_sources_active",
+            "is_active",
+            postgresql_where=text("is_active = true"),
+        ),
+    )
+
     def to_dict(self):
         return {
             "id": str(self.id),
@@ -187,6 +196,15 @@ class ContentItem(Base):
         CheckConstraint(
             "technical_score BETWEEN 1 AND 5",
             name="ck_technical_score_range",
+        ),
+        Index("idx_items_source", "source_id"),
+        Index("idx_items_status", "status"),
+        Index("idx_items_type", "content_type"),
+        Index("idx_items_published", text("published_at DESC")),
+        Index(
+            "idx_items_technical",
+            "technical_score",
+            postgresql_where=text("technical_score >= 4"),
         ),
     )
 
@@ -285,6 +303,10 @@ class ContentItemSpeaker(Base):
 
     content_item = relationship("ContentItem", back_populates="speaker_links")
     speaker = relationship("Speaker", back_populates="content_item_links")
+
+    __table_args__ = (
+        Index("idx_cis_speaker", "speaker_id"),
+    )
 
 
 # =========================================================================

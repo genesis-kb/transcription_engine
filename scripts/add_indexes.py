@@ -31,19 +31,33 @@ def add_indexes():
         
         # content_items
         "CREATE INDEX IF NOT EXISTS idx_items_source ON content_items(source_id);",
+        "CREATE INDEX IF NOT EXISTS idx_items_event ON content_items(event_id);",
         "CREATE INDEX IF NOT EXISTS idx_items_status ON content_items(status);",
         "CREATE INDEX IF NOT EXISTS idx_items_type ON content_items(content_type);",
         "CREATE INDEX IF NOT EXISTS idx_items_published ON content_items(published_at DESC);",
         "CREATE INDEX IF NOT EXISTS idx_items_technical ON content_items(technical_score) WHERE technical_score >= 4;",
         
+        # content_items FTS (Titles & Descriptions)
+        """
+        CREATE INDEX IF NOT EXISTS idx_items_fts 
+        ON content_items USING GIN(to_tsvector('english', COALESCE(title, '') || ' ' || COALESCE(description, '')));
+        """,
+        
         # content_item_speakers
         "CREATE INDEX IF NOT EXISTS idx_cis_speaker ON content_item_speakers(speaker_id);",
         
-        # transcripts FTS (GIN index on tsvector)
+        # taxonomies
+        "CREATE INDEX IF NOT EXISTS idx_taxonomies_parent ON taxonomies(parent_id);",
+        
+        # transcripts FTS (GIN index on tsvector) - Partial index only for active transcripts
         """
         CREATE INDEX IF NOT EXISTS idx_transcripts_fts 
-        ON transcripts USING GIN(to_tsvector('english', COALESCE(corrected_text, raw_text, '')));
+        ON transcripts USING GIN(to_tsvector('english', COALESCE(corrected_text, raw_text, '')))
+        WHERE is_current = true;
         """,
+        
+        # summaries
+        "CREATE INDEX IF NOT EXISTS idx_summaries_type ON summaries(summary_type);",
         
         # summaries FTS (GIN index on tsvector)
         """

@@ -53,6 +53,7 @@ class Taxonomy(Base):
 
     __table_args__ = (
         UniqueConstraint("type", "slug", name="uq_taxonomies_type_slug"),
+        Index("idx_taxonomies_parent", "parent_id"),
     )
 
     def to_dict(self):
@@ -198,6 +199,7 @@ class ContentItem(Base):
             name="ck_technical_score_range",
         ),
         Index("idx_items_source", "source_id"),
+        Index("idx_items_event", "event_id"),
         Index("idx_items_status", "status"),
         Index("idx_items_type", "content_type"),
         Index("idx_items_published", text("published_at DESC")),
@@ -403,6 +405,10 @@ class Summary(Base):
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
 
     transcript = relationship("Transcript", back_populates="summaries")
+
+    __table_args__ = (
+        Index("idx_summaries_type", "summary_type"),
+    )
 
     def to_dict(self):
         return {

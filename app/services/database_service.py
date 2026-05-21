@@ -137,10 +137,9 @@ class DatabaseService:
 
                     # Add speakers
                     if source.speakers:
-                        import re
+                        from app.utils import slugify
                         for spk_name in source.speakers:
-                            spk_slug = re.sub(r"[^\w\s-]", "", spk_name.lower().strip())
-                            spk_slug = re.sub(r"[-\s]+", "-", spk_slug).strip("-") or "unknown"
+                            spk_slug = slugify(spk_name)
                             spk = session.query(Speaker).filter_by(slug=spk_slug).first()
                             if not spk:
                                 spk = Speaker(name=spk_name, slug=spk_slug)
@@ -247,6 +246,15 @@ class DatabaseService:
                 if source_type:
                     query = query.filter_by(source_type=source_type)
                 objs = query.all()
+                
+                # Sort deterministically by priority (from config, descending) then name (ascending)
+                def get_priority(obj):
+                    try:
+                        return int(obj.config.get("priority", 0)) if isinstance(obj.config, dict) else 0
+                    except (ValueError, TypeError):
+                        return 0
+
+                objs.sort(key=lambda x: (-get_priority(x), x.name or ""))
                 return [obj.to_dict() for obj in objs]
         except Exception as e:
             logger.error(f"Failed to get active sources: {e}")

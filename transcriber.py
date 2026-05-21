@@ -94,10 +94,10 @@ whisper = click.option(
 asr_provider_option = click.option(
     "-p",
     "--asr-provider",
-    type=str,
+    type=click.Choice(get_available_providers(), case_sensitive=False),
     default=settings.ASR_PROVIDER,
     show_default=True,
-    help=f"Select which ASR provider to use for the transcription (e.g. {', '.join(get_available_providers())})",
+    help="Select which ASR provider to use for the transcription.",
 )
 diarize = click.option(
     "-M",

@@ -14,7 +14,7 @@ class IngestionService:
         self._db = get_database_service()
 
     def run_full_pipeline(self) -> dict:
-        """Execute the full pipeline: scan → classify → queue approved videos.
+        """Execute the full pipeline: scan → classify → queue approved items.
 
         Returns:
             Combined summary of all stages.
@@ -22,27 +22,27 @@ class IngestionService:
         logger.info("Starting full ingestion pipeline...")
 
         # Stage 1: Scan
-        logger.info("Stage 1: Scanning channels for new videos...")
+        logger.info("Stage 1: Scanning channels for new content...")
         scanner = ChannelScanner()
         scan_result = scanner.scan_all_channels()
         logger.info(
-            f"Scan complete: {scan_result['videos_discovered']} videos discovered."
+            f"Scan complete: {scan_result['items_discovered']} items discovered."
         )
 
         # Stage 2: Classify
-        logger.info("Stage 2: Classifying pending videos...")
+        logger.info("Stage 2: Classifying pending items...")
         classifier = ContentClassifier()
         classify_result = classifier.classify_all_pending()
         logger.info(
-            f"Classification complete: {classify_result['videos_approved']} approved, "
-            f"{classify_result['videos_rejected']} rejected."
+            f"Classification complete: {classify_result['items_approved']} approved, "
+            f"{classify_result['items_rejected']} rejected."
         )
 
-        # Stage 3: Queue approved videos into transcription pipeline
-        logger.info("Stage 3: Queueing approved videos for transcription...")
-        queue_result = self.queue_approved_videos()
+        # Stage 3: Queue approved items into transcription pipeline
+        logger.info("Stage 3: Queueing approved items for transcription...")
+        queue_result = self.queue_approved_items()
         logger.info(
-            f"Queueing complete: {queue_result['videos_queued']} videos sent to pipeline."
+            f"Queueing complete: {queue_result['items_queued']} items sent to pipeline."
         )
 
         summary = {
@@ -64,48 +64,49 @@ class IngestionService:
         logger.info("Full ingestion pipeline complete.")
         return summary
 
-    def queue_approved_videos(self, limit: int = 20) -> dict:
-        """Queue approved videos into the transcription pipeline.
+    def queue_approved_items(self, limit: int = 20) -> dict:
+        """Queue approved items into the transcription pipeline.
 
-        Fetches videos with status 'queued' and submits them to the
+        Fetches items with status 'queued' and submits them to the
         transcription API endpoint.
 
         Args:
-            limit: Max number of videos to queue per run.
+            limit: Max number of items to queue per run.
 
         Returns:
             Summary dict with counts and errors.
         """
-        videos = self._db.get_videos_by_status("queued", limit=limit)
-        if not videos:
-            logger.info("No approved videos to queue for transcription.")
-            return {"videos_queued": 0, "errors": []}
+        items = self._db.get_items_by_status("queued", limit=limit)
+        if not items:
+            logger.info("No approved items to queue for transcription.")
+            return {"items_queued": 0, "errors": []}
 
         queued = 0
         errors = []
 
-        for video in videos:
+        for item in items:
             try:
-                self._submit_to_pipeline(video)
+                self._submit_to_pipeline(item)
                 queued += 1
             except Exception as e:
-                error_msg = f"Failed to queue '{video.get('title', video['video_id'])}': {e}"
+                error_msg = f"Failed to queue '{item.get('title', item['external_id'])}': {e}"
                 logger.error(error_msg)
                 errors.append(error_msg)
 
-        return {"videos_queued": queued, "errors": errors}
+        return {"items_queued": queued, "errors": errors}
 
-    def _submit_to_pipeline(self, video: dict):
-        """Submit a single video to the transcription pipeline via internal API.
+    def _submit_to_pipeline(self, item: dict):
+        """Submit a single item to the transcription pipeline via internal API.
 
         Args:
-            video: Row from youtube_videos table with joined channel data.
+            item: Row from content_items table with joined source data.
         """
-        video_id = video["video_id"]
-        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+        url = item.get("url")
+        if not url:
+            url = f"https://www.youtube.com/watch?v={item['external_id']}"
 
-        channel_info = video.get("youtube_channels") or {}
-        channel_category = channel_info.get("category", "misc")
+        source_info = item.get("content_source") or {}
+        source_slug = source_info.get("slug", "misc")
 
         import requests
 
@@ -116,12 +117,13 @@ class IngestionService:
         )
 
         data = {
-            "source": youtube_url,
-            "loc": channel_category,
+            "source": url,
+            "loc": source_slug,
             "deepgram": True,
             "diarize": True,
             "markdown": True,
             "correct": True,
+            "username": "ingestion_bot",
         }
 
         # Add to queue
@@ -130,10 +132,10 @@ class IngestionService:
         )
         response.raise_for_status()
 
-        # Update video status
-        self._db.update_youtube_video(
-            video["id"],
+        # Update item status
+        self._db.update_content_item(
+            item["id"],
             {"status": "transcribed"},
         )
 
-        logger.info(f"Queued for transcription: {video.get('title', video_id)}")
+        logger.info(f"Queued for transcription: {item.get('title', item['external_id'])}")

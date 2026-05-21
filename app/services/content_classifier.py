@@ -130,8 +130,7 @@ class ContentClassifier:
         # Get channel info from joined data
         source_info = item.get("content_source") or {}
         channel_name = source_info.get("name", "")
-        # The category isn't normally passed in include_source dict anymore, just default to slug
-        channel_category = source_info.get("slug", "unknown")
+        channel_category = source_info.get("category", source_info.get("slug", "unknown"))
 
         title = item.get("title", "")
         description = item.get("description", "")

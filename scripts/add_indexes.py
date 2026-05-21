@@ -26,65 +26,64 @@ def add_indexes():
 
     index_sqls = [
         # content_sources
-        "CREATE INDEX IF NOT EXISTS idx_sources_type ON content_sources(source_type);",
-        "CREATE INDEX IF NOT EXISTS idx_sources_active ON content_sources(is_active) WHERE is_active = true;",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sources_type ON content_sources(source_type);",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sources_active ON content_sources(is_active) WHERE is_active = true;",
         
         # content_items
-        "CREATE INDEX IF NOT EXISTS idx_items_source ON content_items(source_id);",
-        "CREATE INDEX IF NOT EXISTS idx_items_event ON content_items(event_id);",
-        "CREATE INDEX IF NOT EXISTS idx_items_status ON content_items(status);",
-        "CREATE INDEX IF NOT EXISTS idx_items_type ON content_items(content_type);",
-        "CREATE INDEX IF NOT EXISTS idx_items_published ON content_items(published_at DESC);",
-        "CREATE INDEX IF NOT EXISTS idx_items_technical ON content_items(technical_score) WHERE technical_score >= 4;",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_items_source ON content_items(source_id);",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_items_event ON content_items(event_id);",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_items_status ON content_items(status);",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_items_type ON content_items(content_type);",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_items_published ON content_items(published_at DESC);",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_items_technical ON content_items(technical_score) WHERE technical_score >= 4;",
         
         # content_items FTS (Titles & Descriptions)
         """
-        CREATE INDEX IF NOT EXISTS idx_items_fts 
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_items_fts 
         ON content_items USING GIN(to_tsvector('english', COALESCE(title, '') || ' ' || COALESCE(description, '')));
         """,
         
         # content_item_speakers
-        "CREATE INDEX IF NOT EXISTS idx_cis_speaker ON content_item_speakers(speaker_id);",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_cis_speaker ON content_item_speakers(speaker_id);",
         
         # taxonomies
-        "CREATE INDEX IF NOT EXISTS idx_taxonomies_parent ON taxonomies(parent_id);",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_taxonomies_parent ON taxonomies(parent_id);",
         
         # transcripts FTS (GIN index on tsvector) - Partial index only for active transcripts
         """
-        CREATE INDEX IF NOT EXISTS idx_transcripts_fts 
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_transcripts_fts 
         ON transcripts USING GIN(to_tsvector('english', COALESCE(corrected_text, raw_text, '')))
         WHERE is_current = true;
         """,
         
         # summaries
-        "CREATE INDEX IF NOT EXISTS idx_summaries_type ON summaries(summary_type);",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_summaries_type ON summaries(summary_type);",
         
         # summaries FTS (GIN index on tsvector)
         """
-        CREATE INDEX IF NOT EXISTS idx_summaries_fts 
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_summaries_fts 
         ON summaries USING GIN(to_tsvector('english', COALESCE(content, '')));
         """
     ]
 
-    with engine.connect() as conn:
-        with conn.begin():
-            # Postgres GIN indexes require the pg_trgm extension for some advanced text operations,
-            # though to_tsvector doesn't strictly need it, it's good to have.
-            add_pg_trgm_extension = os.getenv("ADD_PG_TRGM_EXTENSION", "true").lower() in ("1", "true", "yes", "on")
-            if add_pg_trgm_extension:
-                try:
-                    conn.execute(text('CREATE EXTENSION IF NOT EXISTS "pg_trgm";'))
-                except Exception as e:
-                    logger.warning(
-                        f'Could not create optional PostgreSQL extension "pg_trgm": {e}. '
-                        "Continuing with index creation."
-                    )
-            else:
-                logger.info('Skipping optional PostgreSQL extension creation for "pg_trgm".')
-            
-            for sql in index_sqls:
-                logger.info(f"Executing: {sql.strip().split(chr(10))[0]}...")
-                conn.execute(text(sql))
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        # Postgres GIN indexes require the pg_trgm extension for some advanced text operations,
+        # though to_tsvector doesn't strictly need it, it's good to have.
+        add_pg_trgm_extension = os.getenv("ADD_PG_TRGM_EXTENSION", "true").lower() in ("1", "true", "yes", "on")
+        if add_pg_trgm_extension:
+            try:
+                conn.execute(text('CREATE EXTENSION IF NOT EXISTS "pg_trgm";'))
+            except Exception as e:
+                logger.warning(
+                    f'Could not create optional PostgreSQL extension "pg_trgm": {e}. '
+                    "Continuing with index creation."
+                )
+        else:
+            logger.info('Skipping optional PostgreSQL extension creation for "pg_trgm".')
+        
+        for sql in index_sqls:
+            logger.info(f"Executing: {sql.strip().split(chr(10))[0]}...")
+            conn.execute(text(sql))
 
     logger.info("All indexes created successfully!")
 

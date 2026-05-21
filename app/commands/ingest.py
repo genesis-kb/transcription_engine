@@ -114,7 +114,7 @@ def list_sources():
         result = response.json()
         data = result.get("data", [])
         if not data:
-            logger.info("No channels configured.")
+            logger.info("No sources configured.")
             return
         for ch in data:
             active = "active" if ch.get("is_active") else "inactive"
@@ -126,7 +126,7 @@ def list_sources():
                 f"id: {ch['id']})"
             )
     except Exception as e:
-        logger.error(f"Failed to list channels: {e}")
+        logger.error(f"Failed to list sources: {e}")
 
 
 @sources.command(name="add")

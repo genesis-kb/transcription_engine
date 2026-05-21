@@ -37,111 +37,133 @@ class DatabaseService:
     def save_from_transcript_object(self, transcript) -> Optional[dict]:
         if not self.is_available:
             return None
-        try:
-            with get_session() as session:
-                source = transcript.source
-                media_url = source.source_file
-                video_id = None
-                if "v=" in media_url:
-                    video_id = media_url.split("v=")[-1].split("&")[0]
-                elif "youtu.be/" in media_url:
-                    video_id = media_url.split("youtu.be/")[-1].split("?")[0]
+            
+        from sqlalchemy.exc import IntegrityError
+        import time
+        
+        for attempt in range(3):
+            try:
+                with get_session() as session:
+                    source = transcript.source
+                    raw_media_url = source.source_file
+                    if isinstance(raw_media_url, str):
+                        raw_media_url = raw_media_url.strip()
+                    media_url = raw_media_url or None
 
-                import uuid
-                
-                content_source = None
-                if hasattr(source, "loc") and source.loc:
-                    content_source = session.query(ContentSource).filter_by(slug=source.loc).first()
+                    video_id = None
+                    media_url_for_parsing = media_url or ""
+                    if "v=" in media_url_for_parsing:
+                        video_id = media_url_for_parsing.split("v=")[-1].split("&")[0]
+                    elif "youtu.be/" in media_url_for_parsing:
+                        video_id = media_url_for_parsing.split("youtu.be/")[-1].split("?")[0]
+
+                    import uuid
                     
-                content_item = None
-                if video_id:
-                    query = session.query(ContentItem).filter_by(external_id=video_id)
-                    if content_source:
-                        query = query.filter_by(source_id=content_source.id)
-                    content_item = query.first()
-                
-                if not content_item:
-                    # Find or create manual source
-                    manual_source = session.query(ContentSource).filter_by(slug='manual-imports').first()
-                    if not manual_source:
-                        manual_source = ContentSource(
-                            name='Manual Imports',
-                            slug='manual-imports',
-                            source_type='manual',
-                            is_active=True
-                        )
-                        session.add(manual_source)
-                        session.flush()
-
-                    ext_id = video_id if video_id else f"manual-{uuid.uuid4().hex[:12]}"
-                    
-                    content_item = session.query(ContentItem).filter_by(source_id=manual_source.id, external_id=ext_id).first()
-                    if not content_item:
-                        content_item = ContentItem(
-                            source_id=manual_source.id,
-                            external_id=ext_id,
-                            title=source.title or 'Unknown',
-                            content_type='video',
-                            url=media_url,
-                            status='transcribed'
-                        )
-                        session.add(content_item)
-                        session.flush()
-                else:
-                    content_item.status = 'transcribed'
-
-                # Deactivate existing current transcripts and determine next version
-                existing_transcripts = session.query(Transcript).filter_by(content_item_id=content_item.id).all()
-                next_version = 1
-                for existing_t in existing_transcripts:
-                    if existing_t.version >= next_version:
-                        next_version = existing_t.version + 1
-                    if existing_t.is_current:
-                        existing_t.is_current = False
-
-                # Add transcript
-                t = Transcript(
-                    content_item_id=content_item.id,
-                    is_current=True,
-                    version=next_version,
-                    raw_text=transcript.outputs.get("raw", ""),
-                    corrected_text=transcript.outputs.get("corrected_text", "")
-                )
-                session.add(t)
-                session.flush()
-                
-                # Add summary
-                summary_text = transcript.summary if hasattr(transcript, "summary") else None
-                if summary_text:
-                    s = Summary(
-                        transcript_id=t.id,
-                        summary_type='tldr',
-                        content=summary_text
-                    )
-                    session.add(s)
-
-                # Add speakers
-                if source.speakers:
-                    import re
-                    for spk_name in source.speakers:
-                        spk_slug = re.sub(r"[^\w\s-]", "", spk_name.lower().strip())
-                        spk_slug = re.sub(r"[-\s]+", "-", spk_slug).strip("-") or "unknown"
-                        spk = session.query(Speaker).filter_by(slug=spk_slug).first()
-                        if not spk:
-                            spk = Speaker(name=spk_name, slug=spk_slug)
-                            session.add(spk)
-                            session.flush()
+                    content_source = None
+                    if hasattr(source, "loc") and source.loc:
+                        content_source = session.query(ContentSource).filter_by(slug=source.loc).first()
                         
-                        cis = session.query(ContentItemSpeaker).filter_by(content_item_id=content_item.id, speaker_id=spk.id).first()
-                        if not cis:
-                            cis = ContentItemSpeaker(content_item_id=content_item.id, speaker_id=spk.id, role='speaker')
-                            session.add(cis)
+                    content_item = None
+                    if video_id:
+                        query = session.query(ContentItem).filter_by(external_id=video_id)
+                        if content_source:
+                            query = query.filter_by(source_id=content_source.id)
+                        content_item = query.first()
+                    
+                    if not content_item:
+                        if content_source:
+                            target_source_id = content_source.id
+                        else:
+                            # Find or create manual source
+                            manual_source = session.query(ContentSource).filter_by(slug='manual-imports').first()
+                            if not manual_source:
+                                manual_source = ContentSource(
+                                    name='Manual Imports',
+                                    slug='manual-imports',
+                                    source_type='manual',
+                                    is_active=True
+                                )
+                                session.add(manual_source)
+                                session.flush()
+                            target_source_id = manual_source.id
 
-                session.commit()
-                return t.to_dict()
-        except Exception as e:
-            logger.error(f"Failed to save transcript object: {e}")
-            return None
+                        ext_id = video_id if video_id else f"manual-{uuid.uuid4().hex[:12]}"
+                        
+                        content_item = session.query(ContentItem).filter_by(source_id=target_source_id, external_id=ext_id).first()
+                        if not content_item:
+                            content_item = ContentItem(
+                                source_id=target_source_id,
+                                external_id=ext_id,
+                                title=source.title or 'Unknown',
+                                content_type='video',
+                                url=media_url,
+                                status='transcribed'
+                            )
+                            session.add(content_item)
+                            session.flush()
+                    else:
+                        content_item.status = 'transcribed'
+
+                    # Lock existing transcripts to prevent race condition
+                    existing_transcripts = session.query(Transcript).filter_by(content_item_id=content_item.id).with_for_update().all()
+                    
+                    next_version = 1
+                    for existing_t in existing_transcripts:
+                        if existing_t.version >= next_version:
+                            next_version = existing_t.version + 1
+                        if existing_t.is_current:
+                            existing_t.is_current = False
+
+                    # Add transcript
+                    t = Transcript(
+                        content_item_id=content_item.id,
+                        is_current=True,
+                        version=next_version,
+                        raw_text=transcript.outputs.get("raw", ""),
+                        corrected_text=transcript.outputs.get("corrected_text", "")
+                    )
+                    session.add(t)
+                    session.flush()
+                    
+                    # Add summary
+                    summary_text = transcript.summary if hasattr(transcript, "summary") else None
+                    if summary_text:
+                        s = Summary(
+                            transcript_id=t.id,
+                            summary_type='tldr',
+                            content=summary_text
+                        )
+                        session.add(s)
+
+                    # Add speakers
+                    if source.speakers:
+                        import re
+                        for spk_name in source.speakers:
+                            spk_slug = re.sub(r"[^\w\s-]", "", spk_name.lower().strip())
+                            spk_slug = re.sub(r"[-\s]+", "-", spk_slug).strip("-") or "unknown"
+                            spk = session.query(Speaker).filter_by(slug=spk_slug).first()
+                            if not spk:
+                                spk = Speaker(name=spk_name, slug=spk_slug)
+                                session.add(spk)
+                                session.flush()
+                            
+                            cis = session.query(ContentItemSpeaker).filter_by(content_item_id=content_item.id, speaker_id=spk.id).first()
+                            if not cis:
+                                cis = ContentItemSpeaker(content_item_id=content_item.id, speaker_id=spk.id, role='speaker')
+                                session.add(cis)
+
+                    session.commit()
+                    return t.to_dict()
+            except IntegrityError:
+                if attempt < 2:
+                    time.sleep(0.1 * (attempt + 1))
+                    continue
+                logger.error("Failed to save transcript object due to IntegrityError after retries.")
+                return None
+            except Exception as e:
+                logger.error(f"Failed to save transcript object: {e}")
+                return None
+        return None
 
     def get_all_transcripts(self, limit: int = 100, offset: int = 0) -> list:
         if not self.is_available:
@@ -324,7 +346,7 @@ class DatabaseService:
                 )
                 if obj:
                     # using config jsonb to store last_scanned_at
-                    config = obj.config or {}
+                    config = dict(obj.config or {})
                     config["last_scanned_at"] = datetime.now(timezone.utc).isoformat()
                     obj.config = config
                     session.commit()
@@ -352,13 +374,14 @@ class DatabaseService:
             )
             return None
 
-    def get_existing_item_external_ids(self, external_ids: list[str]) -> set:
+    def get_existing_item_external_ids(self, source_id: str, external_ids: list[str]) -> set:
         if not self.is_available or not external_ids:
             return set()
         try:
             with get_session() as session:
                 rows = (
                     session.query(ContentItem.external_id)
+                    .filter(ContentItem.source_id == source_id)
                     .filter(ContentItem.external_id.in_(external_ids))
                     .all()
                 )

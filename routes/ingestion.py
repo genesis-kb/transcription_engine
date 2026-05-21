@@ -116,13 +116,7 @@ async def update_source(source_id: str, updates: SourceUpdate):
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update.")
         
-    if "config" in update_data:
-        existing_source = db.get_source_by_id(source_id)
-        if existing_source and existing_source.get("config"):
-            merged_config = existing_source["config"].copy()
-            merged_config.update(update_data["config"])
-            update_data["config"] = merged_config
-            
+
     result = db.update_source(source_id, update_data)
     if result is None:
         raise HTTPException(status_code=404, detail="Source not found.")

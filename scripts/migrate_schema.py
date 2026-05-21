@@ -203,12 +203,13 @@ def run_migration(dry_run=False):
                     
                     if not content_item_id:
                         ext_id = video_id if video_id else f"manual-{t_id}"
+                        db_url = t.media_url if t.media_url else None
                         row = conn.execute(text("""
                             INSERT INTO content_items (source_id, external_id, title, content_type, url, status)
                             VALUES (:s_id, :ext_id, :title, 'video', :url, 'transcribed')
                             ON CONFLICT (source_id, external_id) DO UPDATE SET title = EXCLUDED.title
                             RETURNING id;
-                        """), {"s_id": manual_source_id, "ext_id": ext_id, "title": t.title or 'Unknown', "url": t.media_url}).first()
+                        """), {"s_id": manual_source_id, "ext_id": ext_id, "title": t.title or 'Unknown', "url": db_url}).first()
                         content_item_id = row[0]
 
                     conn.execute(text("""
@@ -257,6 +258,22 @@ def run_migration(dry_run=False):
             if not dry_run:
                 res = conn.execute(text(migrate_runs_sql))
                 logger.info(f"Migrated {res.rowcount} pipeline runs.")
+                
+                # Link sources to their latest pipeline runs (must run after pipeline_runs are populated)
+                update_last_run_sql = """
+                    UPDATE content_sources cs
+                    SET last_run_id = pr.id,
+                        last_run_status = pr.status
+                    FROM (
+                        SELECT id, source_id, status,
+                               ROW_NUMBER() OVER(PARTITION BY source_id ORDER BY created_at DESC) as rn
+                        FROM pipeline_runs
+                        WHERE source_id IS NOT NULL
+                    ) pr
+                    WHERE cs.id = pr.source_id AND pr.rn = 1;
+                """
+                conn.execute(text(update_last_run_sql))
+                logger.info("Linked content_sources to their latest pipeline runs.")
             else:
                 logger.info(f"DRY RUN: {migrate_runs_sql}")
 

@@ -266,7 +266,7 @@ def run_migration(dry_run=False):
                         last_run_status = pr.status
                     FROM (
                         SELECT id, source_id, status,
-                               ROW_NUMBER() OVER(PARTITION BY source_id ORDER BY created_at DESC) as rn
+                               ROW_NUMBER() OVER(PARTITION BY source_id ORDER BY started_at DESC) as rn
                         FROM pipeline_runs
                         WHERE source_id IS NOT NULL
                     ) pr

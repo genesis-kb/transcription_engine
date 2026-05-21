@@ -90,11 +90,20 @@ class DatabaseService:
                 else:
                     content_item.status = 'transcribed'
 
+                # Deactivate existing current transcripts and determine next version
+                existing_transcripts = session.query(Transcript).filter_by(content_item_id=content_item.id).all()
+                next_version = 1
+                for existing_t in existing_transcripts:
+                    if existing_t.version >= next_version:
+                        next_version = existing_t.version + 1
+                    if existing_t.is_current:
+                        existing_t.is_current = False
+
                 # Add transcript
                 t = Transcript(
                     content_item_id=content_item.id,
                     is_current=True,
-                    version=1,
+                    version=next_version,
                     raw_text=transcript.outputs.get("raw", ""),
                     corrected_text=transcript.outputs.get("corrected_text", "")
                 )

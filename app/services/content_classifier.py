@@ -88,7 +88,7 @@ class ContentClassifier:
             "errors": errors,
         }
 
-    def classify_video_by_id(self, item_db_id: str) -> dict:
+    def classify_item_by_id(self, item_db_id: str) -> dict:
         """Classify a single item by its database UUID."""
         item = self._db.get_item_by_id(item_db_id)
         if not item:

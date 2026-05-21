@@ -5,8 +5,7 @@ import json
 import logging
 import argparse
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 from dotenv import load_dotenv
 
 # Load environment variables from .env
@@ -78,18 +77,47 @@ def run_migration(dry_run=False):
             # 4. Migrate Data
             logger.info("Migrating data from old_youtube_channels -> content_sources...")
             migrate_sources_sql = """
+                WITH source_rows AS (
+                    SELECT
+                        id,
+                        channel_name,
+                        channel_url,
+                        channel_id,
+                        category,
+                        priority,
+                        is_active,
+                        created_at,
+                        LOWER(REGEXP_REPLACE(channel_name, '[^a-zA-Z0-9]+', '-', 'g')) AS base_slug
+                    FROM old_youtube_channels
+                ),
+                deduped_source_rows AS (
+                    SELECT
+                        id,
+                        channel_name,
+                        channel_url,
+                        channel_id,
+                        category,
+                        priority,
+                        is_active,
+                        created_at,
+                        CASE
+                            WHEN COUNT(*) OVER (PARTITION BY base_slug) > 1 THEN base_slug || '-' || id
+                            ELSE base_slug
+                        END AS slug
+                    FROM source_rows
+                )
                 INSERT INTO content_sources (id, name, slug, source_type, base_url, config, is_active, last_run_status, created_at)
-                SELECT 
-                    id, 
-                    channel_name, 
-                    LOWER(REGEXP_REPLACE(channel_name, '[^a-zA-Z0-9]+', '-', 'g')), 
-                    'youtube', 
-                    channel_url, 
-                    jsonb_build_object('yt_channel_id', channel_id, 'category', category, 'priority', priority), 
-                    is_active, 
-                    NULL, 
+                SELECT
+                    id,
+                    channel_name,
+                    slug,
+                    'youtube',
+                    channel_url,
+                    jsonb_build_object('yt_channel_id', channel_id, 'category', category, 'priority', priority),
+                    is_active,
+                    NULL,
                     created_at
-                FROM old_youtube_channels;
+                FROM deduped_source_rows;
             """
             if not dry_run:
                 res = conn.execute(text(migrate_sources_sql))
@@ -135,14 +163,26 @@ def run_migration(dry_run=False):
                 manual_source_id = conn.execute(text("""
                     INSERT INTO content_sources (name, slug, source_type, is_active)
                     VALUES ('Manual Imports', 'manual-imports', 'manual', true)
+                    ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
                     RETURNING id;
                 """)).scalar()
 
-                transcripts = conn.execute(text("SELECT * FROM old_transcripts")).fetchall()
-                logger.info(f"Processing {len(transcripts)} old transcripts...")
+                total_transcripts = conn.execute(text("SELECT COUNT(*) FROM old_transcripts")).scalar()
+                logger.info(f"Processing {total_transcripts} old transcripts in batches...")
                 
+                def iter_transcripts():
+                    offset = 0
+                    batch_size = 100
+                    while True:
+                        batch = conn.execute(text("SELECT * FROM old_transcripts ORDER BY id LIMIT :limit OFFSET :offset"), {"limit": batch_size, "offset": offset}).fetchall()
+                        if not batch:
+                            break
+                        for row in batch:
+                            yield row
+                        offset += batch_size
+
                 migrated_transcripts_count = 0
-                for t in transcripts:
+                for t in iter_transcripts():
                     t_id = t.id
                     raw = t.raw_text
                     corrected = t.corrected_text

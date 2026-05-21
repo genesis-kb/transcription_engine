@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.logging import get_logger
 from app.services.database_service import get_database_service
@@ -16,7 +16,7 @@ class SourceCreate(BaseModel):
     slug: str
     source_type: str = "youtube"
     base_url: Optional[str] = None
-    config: dict = {}
+    config: dict = Field(default_factory=dict)
     is_active: bool = True
 
 
@@ -115,6 +115,14 @@ async def update_source(source_id: str, updates: SourceUpdate):
     }
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update.")
+        
+    if "config" in update_data:
+        existing_source = db.get_source_by_id(source_id)
+        if existing_source and existing_source.get("config"):
+            merged_config = existing_source["config"].copy()
+            merged_config.update(update_data["config"])
+            update_data["config"] = merged_config
+            
     result = db.update_source(source_id, update_data)
     if result is None:
         raise HTTPException(status_code=404, detail="Source not found.")
@@ -154,7 +162,7 @@ async def classify_item(item_id: str):
 
     try:
         classifier = ContentClassifier()
-        result = classifier.classify_video_by_id(item_id)
+        result = classifier.classify_item_by_id(item_id)
         return {"status": "success", **result}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

@@ -70,7 +70,17 @@ def add_indexes():
         with conn.begin():
             # Postgres GIN indexes require the pg_trgm extension for some advanced text operations,
             # though to_tsvector doesn't strictly need it, it's good to have.
-            conn.execute(text('CREATE EXTENSION IF NOT EXISTS "pg_trgm";'))
+            add_pg_trgm_extension = os.getenv("ADD_PG_TRGM_EXTENSION", "true").lower() in ("1", "true", "yes", "on")
+            if add_pg_trgm_extension:
+                try:
+                    conn.execute(text('CREATE EXTENSION IF NOT EXISTS "pg_trgm";'))
+                except Exception as e:
+                    logger.warning(
+                        f'Could not create optional PostgreSQL extension "pg_trgm": {e}. '
+                        "Continuing with index creation."
+                    )
+            else:
+                logger.info('Skipping optional PostgreSQL extension creation for "pg_trgm".')
             
             for sql in index_sqls:
                 logger.info(f"Executing: {sql.strip().split(chr(10))[0]}...")

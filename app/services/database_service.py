@@ -47,9 +47,18 @@ class DatabaseService:
                 elif "youtu.be/" in media_url:
                     video_id = media_url.split("youtu.be/")[-1].split("?")[0]
 
+                import uuid
+                
+                content_source = None
+                if hasattr(source, "loc") and source.loc:
+                    content_source = session.query(ContentSource).filter_by(slug=source.loc).first()
+                    
                 content_item = None
                 if video_id:
-                    content_item = session.query(ContentItem).filter_by(external_id=video_id).first()
+                    query = session.query(ContentItem).filter_by(external_id=video_id)
+                    if content_source:
+                        query = query.filter_by(source_id=content_source.id)
+                    content_item = query.first()
                 
                 if not content_item:
                     # Find or create manual source
@@ -64,9 +73,9 @@ class DatabaseService:
                         session.add(manual_source)
                         session.flush()
 
-                    ext_id = video_id if video_id else f"manual-{int(datetime.now().timestamp())}"
+                    ext_id = video_id if video_id else f"manual-{uuid.uuid4().hex[:12]}"
                     
-                    content_item = session.query(ContentItem).filter_by(external_id=ext_id).first()
+                    content_item = session.query(ContentItem).filter_by(source_id=manual_source.id, external_id=ext_id).first()
                     if not content_item:
                         content_item = ContentItem(
                             source_id=manual_source.id,

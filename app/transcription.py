@@ -1,5 +1,10 @@
+import glob
+import json
 import os
 import tempfile
+import time
+from datetime import datetime, timezone
+from typing import Callable, Optional
 
 import yt_dlp
 
@@ -18,7 +23,7 @@ from app.services.metadata_extractor import MetadataExtractorService
 from app.services.summarizer import SummarizerService
 
 # from app.metadata_parser import MetadataParser
-from app.transcript import RSS, Audio, Playlist, Source, Transcript, Video
+from app.transcript import RSS, Audio, Playlist, Source, Transcript, Video, _yt_opts
 
 
 class Transcription:
@@ -43,13 +48,35 @@ class Transcription:
         needs_review=False,
         include_metadata=True,
         correct=False,
-        llm_provider="openai",
-        llm_correction_model="gpt-4o",
-        llm_summary_model="gpt-4o",
+        llm_provider=None,
+        llm_correction_model=None,
+        llm_summary_model=None,
+        no_db=False,
     ):
+        if llm_provider is None:
+            llm_provider = settings.LLM_PROVIDER
+        if llm_correction_model is None:
+            llm_correction_model = settings.config.get("llm_correction_model", "gpt-4o")
+        if llm_summary_model is None:
+            llm_summary_model = settings.config.get("llm_summary_model", "gpt-4o")
+
+        # Pipeline robustness settings
+        self.max_retries = int(
+            settings.config.get("pipeline_max_retries", 3)
+        )
+        self.retry_delay = int(
+            settings.config.get("pipeline_retry_delay_seconds", 10)
+        )
+        if self.max_retries <= 0:
+            raise ValueError("pipeline_max_retries must be an integer > 0")
+        if self.retry_delay < 0:
+            raise ValueError("pipeline_retry_delay_seconds must be an integer >= 0")
+        self._correct_enabled = correct
+        self._summarize_enabled = summarize
         self.nocleanup = nocleanup
         self.status = "idle"
         self.test_mode = test_mode
+        self.no_db = no_db
         self.logger = get_logger()
         self.tmp_dir = (
             working_dir if working_dir is not None else tempfile.mkdtemp()
@@ -87,22 +114,35 @@ class Transcription:
             self.github_handler = GitHubAPIHandler()
         self.review_flag = self.__configure_review_flag(needs_review)
 
-        self.processing_services = []
-        # Always run metadata extraction first (uses Gemini)
-        if not test_mode:
-            self.processing_services.append(MetadataExtractorService())
-        if correct:
-            self.processing_services.append(
-                CorrectionService(
-                    provider=llm_provider, model=llm_correction_model
-                )
+        # Named service attributes — each maps to one pipeline stage.
+        # Storing them separately (instead of a flat processing_services list)
+        # means _build_pipeline_stages() can reference them by name, making
+        # it trivial to add/reorder/disable individual stages later.
+        self.metadata_extractor = (
+            MetadataExtractorService() if not test_mode else None
+        )
+        self.correction_service = (
+            CorrectionService(provider=llm_provider, model=llm_correction_model)
+            if correct
+            else None
+        )
+        self.summary_service = (
+            SummarizerService(provider=llm_provider, model=llm_summary_model)
+            if summarize
+            else None
+        )
+
+        # Keep processing_services for backward-compatibility with postprocess()
+        self.processing_services = list(
+            filter(
+                None,
+                [
+                    self.metadata_extractor,
+                    self.correction_service,
+                    self.summary_service,
+                ],
             )
-        if summarize:
-            self.processing_services.append(
-                SummarizerService(
-                    provider=llm_provider, model=llm_summary_model
-                )
-            )
+        )
 
         if deepgram:
             self.service = services.Deepgram(
@@ -150,6 +190,28 @@ class Transcription:
         else:
             return ""
 
+    def _find_cached_metadata(self, source_file: str, loc: str) -> Optional[dict]:
+        """Scan the local metadata folder for an existing file whose source_file
+        matches the given URL.  Returns the parsed JSON dict, or None if not found.
+
+        This lets add_transcription_source() skip the yt_dlp metadata fetch
+        entirely when we already have the video info on disk.
+        """
+        folder = os.path.join(self.metadata_writer.base_dir, loc)
+        for filepath in glob.glob(os.path.join(folder, "*", "metadata_*.json")):
+            try:
+                with open(filepath) as fh:
+                    data = json.load(fh)
+                if data.get("source_file") == source_file or data.get("media") == source_file:
+                    self.logger.info(
+                        f"Cache hit for '{source_file}' — loading metadata from disk, skipping yt_dlp."
+                    )
+                    return data
+            except Exception:
+                self.logger.debug(f"Failed to read/parse cached metadata file: {filepath}", exc_info=True)
+                continue
+        return None
+
     def __configure_username(self, username: str | None):
         if self.test_mode:
             return "username"
@@ -169,10 +231,10 @@ class Transcription:
             a YouTube playlist or YouTube video by requesting its metadata
             Does not support video-ids, only urls"""
             try:
-                ydl_opts = {
-                    "quiet": False,  # Suppress console output
-                    "extract_flat": True,  # Extract only metadata without downloading
-                }
+                ydl_opts = _yt_opts(
+                    quiet=False,
+                    extract_flat=True,
+                )
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info_dict = ydl.extract_info(
                         source.source_file, download=False
@@ -318,6 +380,22 @@ class Transcription:
         # as it is, every new metadata field needs to be passed to `Source`
         # I can assign directly after initialization like I do with `additional_resources`
         # but I'm not sure if it's the best way to do it.
+        # Check if we already have metadata for this URL on disk.
+        # If so, inject it directly and skip the yt_dlp network call.
+        if youtube_metadata is None and not local:
+            cached = self._find_cached_metadata(source_file, loc)
+            if cached:
+                title = title or cached.get("title", title)
+                date = date or cached.get("date", date)
+                tags = tags or cached.get("tags", tags) or []
+                category = category or cached.get("categories", category) or []
+                speakers = speakers or cached.get("speakers", speakers) or []
+                chapters = chapters or cached.get("chapters", chapters) or []
+                youtube_block = cached.get("youtube")
+                if youtube_block:
+                    youtube_metadata = youtube_block
+                summary = summary or cached.get("summary", summary)
+
         source = self._initialize_source(
             source=Source(
                 source_file=source_file,
@@ -451,36 +529,353 @@ class Transcription:
         return removed_sources
 
     def start(self, test_transcript=None):
-        self.status = "in_progress"
-        try:
-            for transcript in self.transcripts:
-                transcript.status = "in_progress"
-                self.logger.info(
-                    f"Processing source: {transcript.source.source_file}"
-                )
-                transcript.tmp_dir = self._create_subdirectory(
-                    f"transcript-{utils.slugify(transcript.title)}"
-                )
-                transcript.process_source(transcript.tmp_dir)
-                if self.test_mode:
-                    transcript.outputs["raw"] = (
-                        test_transcript
-                        if test_transcript is not None
-                        else "test-mode"
-                    )
-                else:
-                    self.service.transcribe(transcript)
-                transcript.status = "completed"
-                self.postprocess(transcript)
-                self.export(transcript)
+        """Process every transcript in the queue.
 
-            self.status = "completed"
-            if self.github:
-                self.push_to_github(self.transcripts)
-            return self.transcripts
-        except Exception as e:
+        A single video failure never aborts the entire batch — each video is
+        handled by _run_pipeline() which catches its own exceptions.
+        """
+        self.status = "in_progress"
+        for transcript in self.transcripts:
+            transcript.status = "in_progress"
+            self.logger.info(
+                f"Starting pipeline for: {transcript.source.source_file}"
+            )
+            try:
+                self._run_pipeline(transcript, test_transcript)
+            except Exception as exc:
+                transcript.status = "failed"
+                self.logger.error(
+                    f"[PIPELINE] [{transcript.source.source_file}] Unhandled error: {exc}"
+                )
+                self._persist_pipeline_state(transcript)
+
+        if any(t.status == "failed" for t in self.transcripts):
             self.status = "failed"
-            raise Exception(f"Error with the transcription: {e}") from e
+        elif all(t.status == "completed" for t in self.transcripts):
+            self.status = "completed"
+            
+        completed = [t for t in self.transcripts if t.status == "completed"]
+        if self.github and completed:
+            self.push_to_github(completed)
+        return self.transcripts
+
+    def _run_pipeline(self, transcript: Transcript, test_transcript=None) -> None:
+        """Run all pipeline stages for a single transcript.
+
+        Stages are expressed as plain (name, fn, enabled) tuples so that
+        adding a new one (e.g. translation) is just appending a tuple here.
+
+        Behaviour:
+        - Loads any existing pipeline state from metadata/ (resumability).
+        - Skips stages already completed in a previous run.
+        - On stage failure, retries up to max_retries times with backoff.
+        - After exhausting retries, marks remaining stages 'skipped',
+          sets overall='failed', and returns — the next video is unaffected.
+        - Export (markdown) is the last stage; it is naturally skipped if
+          any earlier stage failed.
+        """
+        def do_media(t: Transcript) -> None:
+            if not t.tmp_dir:
+                t.tmp_dir = self._create_subdirectory(
+                    f"transcript-{utils.slugify(t.title)}"
+                )
+            t.process_source(t.tmp_dir)
+
+        def ensure_media_available(t: Transcript) -> None:
+            audio_file = getattr(t, "audio_file", None)
+            has_tmp_dir = bool(t.tmp_dir and os.path.isdir(t.tmp_dir))
+            has_audio_file = bool(audio_file and os.path.isfile(audio_file))
+            if not has_tmp_dir or not has_audio_file:
+                do_media(t)
+
+        def do_transcription(t: Transcript) -> None:
+            if self.test_mode:
+                t.outputs["raw"] = test_transcript or "test-mode"
+            else:
+                ensure_media_available(t)
+                self.service.transcribe(t)
+
+        def do_metadata_extraction(t: Transcript) -> None:
+            if self.metadata_extractor and not self.test_mode:
+                self.metadata_extractor.process(t)
+
+        def do_correction(t: Transcript) -> None:
+            self.correction_service.process(t)
+
+        def do_summarization(t: Transcript) -> None:
+            self.summary_service.process(t)
+
+        def do_export(t: Transcript) -> None:
+            self.export(t)
+
+        # Each tuple: (stage_name, fn, enabled)
+        # To add a new stage, just append a tuple here.
+        stages: list[tuple[str, Callable, bool]] = [
+            ("media_processing",    do_media,               True),
+            ("transcription",       do_transcription,       True),
+            ("metadata_extraction", do_metadata_extraction, bool(self.metadata_extractor)),
+            ("correction",          do_correction,          self._correct_enabled),
+            ("summarization",       do_summarization,       self._summarize_enabled),
+            ("export",              do_export,              True),
+        ]
+
+        # Load any state persisted from a previous run FIRST so that saved
+        # "completed" stages are not overwritten by the pending initialisation below.
+        self._load_existing_pipeline_state(transcript)
+
+        # If transcription was already completed in a previous run, load the
+        # raw transcript text from disk so downstream stages (correction,
+        # summarization) have actual content to work with.
+        transcription_done = (
+            transcript.pipeline_state["stages"]
+            .get("transcription", {})
+            .get("status") == "completed"
+        )
+        if transcription_done:
+            self._load_raw_transcript_from_disk(transcript)
+
+        # initialise any stages not already in the loaded state as pending.
+        for name, _, _ in stages:
+            transcript.pipeline_state["stages"].setdefault(name, {"status": "pending"})
+
+        transcript.pipeline_state["overall"] = "in_progress"
+        self._persist_pipeline_state(transcript)
+
+        for i, (name, fn, enabled) in enumerate(stages):
+            current_status = (
+                transcript.pipeline_state["stages"]
+                .get(name, {})
+                .get("status", "pending")
+            )
+
+            if current_status == "completed":
+                self.logger.info(
+                    f"[PIPELINE] [{transcript.title}] [{name}] → skipped (already completed)"
+                )
+                continue
+
+            if not enabled:
+                self._mark_stage(transcript, name, "skipped")
+                self.logger.info(
+                    f"[PIPELINE] [{transcript.title}] [{name}] → skipped (disabled)"
+                )
+                continue
+
+            success = self._run_stage_with_retry(name, fn, transcript)
+
+            if not success:
+                for remaining_name, _, _ in stages[i + 1:]:
+                    self._mark_stage(transcript, remaining_name, "skipped")
+                transcript.pipeline_state["overall"] = "failed"
+                transcript.pipeline_state["failed_stage"] = name
+                self._persist_pipeline_state(transcript)
+                transcript.status = "failed"
+                self.logger.error(
+                    f"[{transcript.title}] Pipeline failed at '{name}'. "
+                    "Remaining stages skipped."
+                )
+                return
+
+        transcript.pipeline_state["overall"] = "completed"
+        transcript.pipeline_state["failed_stage"] = None
+        self._persist_pipeline_state(transcript)
+        transcript.status = "completed"
+        self.logger.info(f"[PIPELINE] [{transcript.title}] → pipeline completed successfully")
+
+    def _run_stage_with_retry(
+        self,
+        stage_name: str,
+        fn: Callable[[Transcript], None],
+        transcript: Transcript,
+    ) -> bool:
+        """Execute a stage function with exponential-backoff retry.
+
+        Returns True on success, False after exhausting all retries.
+        """
+        self._mark_stage(transcript, stage_name, "in_progress")
+        self.logger.info(f"[PIPELINE] [{transcript.title}] [{stage_name}] → in_progress")
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                fn(transcript)
+                self._update_stage_state(
+                    transcript, stage_name, "completed", attempts=attempt
+                )
+                self.logger.info(
+                    f"[PIPELINE] [{transcript.title}] [{stage_name}] → completed (attempt {attempt})"
+                )
+                return True
+            except Exception as exc:
+                if attempt == self.max_retries:
+                    self.logger.error(
+                        f"[PIPELINE] [{transcript.title}] [{stage_name}] → failed after "
+                        f"{attempt} attempt(s): {exc}"
+                    )
+                    self._update_stage_state(
+                        transcript, stage_name, "failed",
+                        error=str(exc), attempts=attempt,
+                    )
+                    return False
+                wait = min(self.retry_delay * (2 ** (attempt - 1)), 300)
+                self.logger.warning(
+                    f"[PIPELINE] [{transcript.title}] [{stage_name}] → attempt {attempt} failed "
+                    f"— retrying in {wait}s. Reason: {exc}"
+                )
+                time.sleep(wait)
+        return False
+
+    # ------------------------------------------------------------------
+    # Pipeline state helpers
+    # ------------------------------------------------------------------
+
+    def _mark_stage(self, transcript: Transcript, stage_name: str, status: str) -> None:
+        """Set a stage to a terminal/transitional status without extra metadata."""
+        transcript.pipeline_state["stages"][stage_name] = {"status": status}
+        self._persist_pipeline_state(transcript)
+
+    def _update_stage_state(
+        self,
+        transcript: Transcript,
+        stage_name: str,
+        status: str,
+        error: Optional[str] = None,
+        attempts: Optional[int] = None,
+    ) -> None:
+        """Write rich stage metadata (timestamps, error, attempts)."""
+        entry: dict = {"status": status}
+        if status == "completed":
+            entry["completed_at"] = datetime.now(timezone.utc).isoformat()
+        if error:
+            entry["error"] = error
+        if attempts is not None:
+            entry["attempts"] = attempts
+        transcript.pipeline_state["stages"][stage_name] = entry
+        self._persist_pipeline_state(transcript)
+
+    def _persist_pipeline_state(self, transcript: Transcript) -> None:
+        """Upsert the pipeline_state block at the top of the metadata JSON.
+
+        If no metadata file exists yet (e.g. media_processing failed before
+        anything was written), a minimal stub is created so the failure is
+        always recorded on disk.
+        """
+        folder = os.path.join(
+            self.metadata_writer.base_dir,
+            transcript.source.output_path_with_title,
+        )
+        os.makedirs(folder, exist_ok=True)
+
+        existing_files = sorted(glob.glob(os.path.join(folder, "metadata_*.json")))
+
+        if existing_files:
+            filepath = existing_files[-1]
+            try:
+                with open(filepath) as fh:
+                    existing_data = json.load(fh)
+            except Exception:
+                existing_data = {}
+        else:
+            # No metadata file yet — create a stub so the failure is visible.
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
+            filepath = os.path.join(folder, f"metadata_{ts}.json")
+            existing_data = {
+                "title": transcript.title,
+                "source_file": transcript.source.source_file,
+            }
+
+        # pipeline_state always goes first for visibility
+        updated = {
+            "pipeline_state": transcript.pipeline_state,
+            **{k: v for k, v in existing_data.items() if k != "pipeline_state"},
+        }
+
+        tmp_filepath = filepath + ".tmp"
+        with open(tmp_filepath, "w") as fh:
+            json.dump(updated, fh, indent=4)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_filepath, filepath)
+
+    def _load_existing_pipeline_state(self, transcript: Transcript) -> None:
+        """Load a previously persisted pipeline_state into the transcript.
+
+        This enables resumability: if the same URL is re-queued after a
+        partial failure, the pipeline skips all already-completed stages.
+        """
+        folder = os.path.join(
+            self.metadata_writer.base_dir,
+            transcript.source.output_path_with_title,
+        )
+        existing_files = sorted(glob.glob(os.path.join(folder, "metadata_*.json")))
+        if not existing_files:
+            return
+
+        # Scan ALL metadata files newest-first for one that has a pipeline_state.
+        # This is necessary because add_to_queue() writes a brand-new metadata file
+        # (without pipeline_state) BEFORE start() is called, so the "latest" file
+        # is often a fresh blank one — not the persisted state from a previous run.
+        saved = None
+        for filepath in reversed(existing_files):
+            try:
+                with open(filepath) as fh:
+                    data = json.load(fh)
+                if "pipeline_state" in data:
+                    saved = data["pipeline_state"]
+                    break
+            except Exception:
+                self.logger.error(f"Failed to read/parse existing pipeline state from {filepath}", exc_info=True)
+                continue
+
+        if saved is None:
+            return
+
+        # Merge saved stages into the transcript's current (all-pending) state
+        for stage_name, stage_data in saved.get("stages", {}).items():
+            transcript.pipeline_state["stages"].setdefault(stage_name, stage_data)
+
+        if saved.get("failed_stage"):
+            transcript.pipeline_state["failed_stage"] = saved["failed_stage"]
+
+        self.logger.info(
+            f"[PIPELINE] [{transcript.title}] Loaded existing state "
+            f"(overall={saved.get('overall', 'unknown')})."
+        )
+
+    def _load_raw_transcript_from_disk(self, transcript: Transcript) -> None:
+        """Populate transcript.outputs['raw'] from the saved ASR service JSON.
+
+        Called when the transcription stage is already 'completed' in the
+        pipeline state (resumability path).  Without this, correction and
+        summarization would receive None as input.
+        """
+        folder = os.path.join(
+            self.metadata_writer.base_dir,
+            transcript.source.output_path_with_title,
+        )
+        service_name = self.service.__class__.__name__.lower()
+        stt_files = sorted(glob.glob(os.path.join(folder, f"{service_name}_*.json")))
+        if not stt_files:
+            self.logger.warning(
+                f"[{transcript.title}] Transcription marked complete but no "
+                f"{service_name}_*.json found — raw transcript will be empty."
+            )
+            self._mark_stage(transcript, "transcription", "pending")
+            return
+
+        try:
+            transcript.outputs["transcription_service_output_file"] = stt_files[-1]
+            # Reuse service's own finalizer to reconstruct the raw text
+            self.service.finalize_transcript(transcript)
+            self.logger.info(
+                f"[{transcript.title}] Loaded raw transcript from disk "
+                f"({os.path.basename(stt_files[-1])})."
+            )
+        except Exception as exc:
+            self.logger.warning(
+                f"[{transcript.title}] Could not load raw transcript from disk: {exc}"
+            )
+            transcript.outputs["transcription_service_output_file"] = None
+            self._mark_stage(transcript, "transcription", "pending")
 
     def push_to_github(self, transcripts: list[Transcript]):
         if not self.github_handler:
@@ -583,10 +978,13 @@ class Transcription:
                 transcript
             )
 
-        # Save to database if configured
-        db = get_database_service()
-        if db.is_available:
-            db.save_from_transcript_object(transcript)
+        # Save to database if configured (skip when --no-db is set)
+        if self.no_db:
+            self.logger.info("Skipping database save (--no-db flag set)")
+        else:
+            db = get_database_service()
+            if db.is_available:
+                db.save_from_transcript_object(transcript)
 
     def clean_up(self):
         self.logger.debug("Cleaning up...")

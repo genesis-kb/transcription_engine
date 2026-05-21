@@ -15,10 +15,11 @@ from app.media_processor import MediaProcessor
 
 
 def _yt_opts(**extra):
-    """Build yt-dlp options with cookies if available."""
     opts = {**extra}
     if settings.YT_COOKIES_FILE and os.path.exists(settings.YT_COOKIES_FILE):
         opts["cookiefile"] = settings.YT_COOKIES_FILE
+    opts.setdefault("js_runtimes", {"node": {}})
+    opts.setdefault("remote_components", {"ejs:github"})
     return opts
 
 
@@ -53,6 +54,15 @@ class Transcript:
             "transcription_service_output_file": None,
             "srt_file": None,
             "dpe_file": None,
+        }
+        self.tmp_dir = None
+        # Pipeline state tracks per-stage progress for fault tolerance and resumability.
+        # Stages are ordered; any stage can be "pending", "in_progress", "completed",
+        # "failed", or "skipped". The overall key summarises the video's outcome.
+        self.pipeline_state: dict = {
+            "overall": "pending",
+            "failed_stage": None,
+            "stages": {},  # populated by Transcription
         }
 
     def process_source(self, tmp_dir=None):

@@ -1,4 +1,20 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bitcoin
+      POSTGRES_PASSWORD: bitcoin
+      POSTGRES_DB: transcription_engine
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bitcoin -d transcription_engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   server:
     build: .
     ports:
@@ -6,7 +22,10 @@ services:
     env_file:
       - .env
     command: ["tstbtc-server", "prod"]
-  
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   cli:
     build: .
     entrypoint: ["tstbtc"]
@@ -14,3 +33,9 @@ services:
       - .env
     environment:
       - TRANSCRIPTION_SERVER_URL=http://server:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

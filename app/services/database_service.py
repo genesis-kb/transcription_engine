@@ -370,7 +370,7 @@ class DatabaseService:
     def list_content_items(
         self,
         status: Optional[str] = None,
-        technical_score: Optional[int] = None,
+        is_technical: Optional[bool] = None,
         source_id: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
@@ -386,9 +386,13 @@ class DatabaseService:
                 )
                 if status:
                     query = query.filter(ContentItem.status == status)
-                if technical_score is not None:
+                if is_technical is True:
                     query = query.filter(
-                        ContentItem.technical_score >= technical_score
+                        ContentItem.technical_score >= 4
+                    )
+                elif is_technical is False:
+                    query = query.filter(
+                        ContentItem.technical_score < 4
                     )
                 if source_id:
                     query = query.filter(ContentItem.source_id == source_id)

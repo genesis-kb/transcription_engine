@@ -174,13 +174,9 @@ async def list_items(
     """List discovered items with optional filters."""
     db = _get_db()
     
-    # We still allow filtering by technical_score conceptually using the bool flag, 
-    # but the DB now uses technical_score. is_technical=True means technical_score >= 4
-    technical_score = 4 if is_technical else None
-    
     data = db.list_content_items(
         status=status,
-        technical_score=technical_score,
+        is_technical=is_technical,
         source_id=source_id,
         limit=limit,
         offset=offset,

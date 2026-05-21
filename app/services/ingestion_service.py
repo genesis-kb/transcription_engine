@@ -135,7 +135,7 @@ class IngestionService:
         # Update item status
         self._db.update_content_item(
             item["id"],
-            {"status": "transcribed"},
+            {"status": "in_queue"},
         )
 
         logger.info(f"Queued for transcription: {item.get('title', item['external_id'])}")

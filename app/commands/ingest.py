@@ -183,7 +183,7 @@ def items():
 @click.option(
     "--status",
     default=None,
-    help="Filter by status (pending, classified, queued, transcribed, skipped)",
+    help="Filter by status (pending, classified, queued, in_queue, transcribed, skipped)",
 )
 @click.option(
     "--technical/--non-technical",

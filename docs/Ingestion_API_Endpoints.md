@@ -210,7 +210,7 @@ Lists all discovered content items with optional filtering and pagination.
 
   | Parameter | Type | Default | Description |
   |---|---|---|---|
-  | `status` | string | `null` | Filter by status: `pending`, `classified`, `queued`, `transcribed`, `skipped` |
+  | `status` | string | `null` | Filter by status: `pending`, `classified`, `queued`, `in_queue`, `transcribed`, `skipped` |
   | `is_technical` | boolean | `null` | `true` maps to `technical_score >= 4`, `false` maps to `technical_score < 4` |
   | `source_id` | UUID | `null` | Filter by a specific source |
   | `limit` | int | `100` | Max results to return |

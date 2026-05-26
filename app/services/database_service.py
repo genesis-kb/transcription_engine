@@ -1,12 +1,12 @@
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import desc
 from sqlalchemy.orm import joinedload
 
 from app.database import get_session, is_db_configured
 from app.logging import get_logger
-from app.models import IngestionRun, Transcript, YouTubeChannel, YouTubeVideo
-
+from app.models import ContentItem, ContentItemSpeaker, ContentSource, PipelineRun, Speaker, Summary, Taxonomy, Transcript
 
 logger = get_logger()
 
@@ -34,86 +34,135 @@ class DatabaseService:
     # Transcripts
     # =========================================================================
 
-    def save_transcript(self, transcript_data: dict) -> Optional[dict]:
-        if not self.is_available:
-            logger.debug("Database not available, skipping save.")
-            return None
-        try:
-            with get_session() as session:
-                obj = Transcript(**transcript_data)
-                session.add(obj)
-                session.flush()
-                result = obj.to_dict()
-            logger.info(
-                f"Transcript saved: {transcript_data.get('title', 'Unknown')}"
-            )
-            return result
-        except Exception as e:
-            logger.error(f"Failed to save transcript: {e}")
-            return None
-
     def save_from_transcript_object(self, transcript) -> Optional[dict]:
         if not self.is_available:
             return None
-        try:
-            source = transcript.source
-            transcript_data = {
-                "title": source.title,
-                "loc": source.loc,
-                "event_date": str(source.date) if source.date else None,
-                "speakers": source.speakers if source.speakers else [],
-                "tags": source.tags if source.tags else [],
-                "categories": source.category if source.category else [],
-                "raw_text": transcript.outputs.get("raw", ""),
-                "corrected_text": transcript.outputs.get("corrected_text", ""),
-                "summary": transcript.summary
-                if hasattr(transcript, "summary")
-                else None,
-                "media_url": source.source_file,
-                "status": transcript.status,
-                "conference": getattr(source, "conference", None),
-                "topics": getattr(source, "topics", []) or [],
-                "channel_name": (
-                    source.youtube_metadata.get("channel_name", "")
-                    if hasattr(source, "youtube_metadata")
-                    and source.youtube_metadata
-                    else None
-                ),
-            }
-            return self.save_transcript(transcript_data)
-        except Exception as e:
-            logger.error(f"Failed to save transcript object: {e}")
-            return None
+            
+        from sqlalchemy.exc import IntegrityError
+        import time
+        
+        for attempt in range(3):
+            try:
+                with get_session() as session:
+                    source = transcript.source
+                    raw_media_url = source.source_file
+                    if isinstance(raw_media_url, str):
+                        raw_media_url = raw_media_url.strip()
+                    media_url = raw_media_url or None
 
-    def get_transcript(self, title: str, loc: str) -> Optional[dict]:
-        if not self.is_available:
-            return None
-        try:
-            with get_session() as session:
-                obj = (
-                    session.query(Transcript)
-                    .filter_by(title=title, loc=loc)
-                    .first()
-                )
-                return obj.to_dict() if obj else None
-        except Exception as e:
-            logger.error(f"Failed to get transcript: {e}")
-            return None
+                    video_id = None
+                    media_url_for_parsing = media_url or ""
+                    if "v=" in media_url_for_parsing:
+                        video_id = media_url_for_parsing.split("v=")[-1].split("&")[0]
+                    elif "youtu.be/" in media_url_for_parsing:
+                        video_id = media_url_for_parsing.split("youtu.be/")[-1].split("?")[0]
 
-    def list_transcripts(
-        self, loc: Optional[str] = None, limit: int = 100
-    ) -> list:
-        if not self.is_available:
-            return []
-        try:
-            with get_session() as session:
-                query = session.query(Transcript).limit(limit)
-                if loc:
-                    query = query.filter_by(loc=loc)
-                return [obj.to_dict() for obj in query.all()]
-        except Exception as e:
-            logger.error(f"Failed to list transcripts: {e}")
-            return []
+                    import uuid
+                    
+                    content_source = None
+                    if hasattr(source, "loc") and source.loc:
+                        content_source = session.query(ContentSource).filter_by(slug=source.loc).first()
+                        
+                    content_item = None
+                    if video_id:
+                        query = session.query(ContentItem).filter_by(external_id=video_id)
+                        if content_source:
+                            query = query.filter_by(source_id=content_source.id)
+                        content_item = query.first()
+                    
+                    if not content_item:
+                        if content_source:
+                            target_source_id = content_source.id
+                        else:
+                            # Find or create manual source
+                            manual_source = session.query(ContentSource).filter_by(slug='manual-imports').first()
+                            if not manual_source:
+                                manual_source = ContentSource(
+                                    name='Manual Imports',
+                                    slug='manual-imports',
+                                    source_type='manual',
+                                    is_active=True
+                                )
+                                session.add(manual_source)
+                                session.flush()
+                            target_source_id = manual_source.id
+
+                        ext_id = video_id if video_id else f"manual-{uuid.uuid4().hex[:12]}"
+                        
+                        content_item = session.query(ContentItem).filter_by(source_id=target_source_id, external_id=ext_id).first()
+                        if not content_item:
+                            content_item = ContentItem(
+                                source_id=target_source_id,
+                                external_id=ext_id,
+                                title=source.title or 'Unknown',
+                                content_type='video',
+                                url=media_url,
+                                status='transcribed'
+                            )
+                            session.add(content_item)
+                            session.flush()
+                    else:
+                        content_item.status = 'transcribed'
+
+                    # Lock existing transcripts to prevent race condition
+                    existing_transcripts = session.query(Transcript).filter_by(content_item_id=content_item.id).with_for_update().all()
+                    
+                    next_version = 1
+                    for existing_t in existing_transcripts:
+                        if existing_t.version >= next_version:
+                            next_version = existing_t.version + 1
+                        if existing_t.is_current:
+                            existing_t.is_current = False
+
+                    # Add transcript
+                    t = Transcript(
+                        content_item_id=content_item.id,
+                        is_current=True,
+                        version=next_version,
+                        raw_text=transcript.outputs.get("raw", ""),
+                        corrected_text=transcript.outputs.get("corrected_text", "")
+                    )
+                    session.add(t)
+                    session.flush()
+                    
+                    # Add summary
+                    summary_text = transcript.summary if hasattr(transcript, "summary") else None
+                    if summary_text:
+                        s = Summary(
+                            transcript_id=t.id,
+                            summary_type='tldr',
+                            content=summary_text
+                        )
+                        session.add(s)
+
+                    # Add speakers
+                    if source.speakers:
+                        from app.utils import slugify
+                        for spk_name in source.speakers:
+                            spk_slug = slugify(spk_name)
+                            spk = session.query(Speaker).filter_by(slug=spk_slug).first()
+                            if not spk:
+                                spk = Speaker(name=spk_name, slug=spk_slug)
+                                session.add(spk)
+                                session.flush()
+                            
+                            cis = session.query(ContentItemSpeaker).filter_by(content_item_id=content_item.id, speaker_id=spk.id).first()
+                            if not cis:
+                                cis = ContentItemSpeaker(content_item_id=content_item.id, speaker_id=spk.id, role='speaker')
+                                session.add(cis)
+
+                    session.commit()
+                    return t.to_dict()
+            except IntegrityError:
+                if attempt < 2:
+                    time.sleep(0.1 * (attempt + 1))
+                    continue
+                logger.error("Failed to save transcript object due to IntegrityError after retries.")
+                return None
+            except Exception as e:
+                logger.error(f"Failed to save transcript object: {e}")
+                return None
+        return None
 
     def get_all_transcripts(self, limit: int = 100, offset: int = 0) -> list:
         if not self.is_available:
@@ -122,7 +171,7 @@ class DatabaseService:
             with get_session() as session:
                 objs = (
                     session.query(Transcript)
-                    .order_by(Transcript.created_at.desc())
+                    .order_by(desc(Transcript.created_at))
                     .offset(offset)
                     .limit(limit)
                     .all()
@@ -157,7 +206,7 @@ class DatabaseService:
                 objs = (
                     session.query(Transcript)
                     .filter(Transcript.corrected_text.isnot(None))
-                    .order_by(Transcript.created_at.desc())
+                    .order_by(desc(Transcript.created_at))
                     .offset(offset)
                     .limit(limit)
                     .all()
@@ -173,9 +222,8 @@ class DatabaseService:
         try:
             with get_session() as session:
                 objs = (
-                    session.query(Transcript)
-                    .filter(Transcript.summary.isnot(None))
-                    .order_by(Transcript.created_at.desc())
+                    session.query(Summary)
+                    .order_by(desc(Summary.created_at))
                     .offset(offset)
                     .limit(limit)
                     .all()
@@ -186,196 +234,193 @@ class DatabaseService:
             return []
 
     # =========================================================================
-    # YouTube Channels
+    # Content Sources
     # =========================================================================
 
-    def get_active_channels(self) -> list:
+    def get_active_sources(self, source_type: Optional[str] = None) -> list:
         if not self.is_available:
             return []
         try:
             with get_session() as session:
-                objs = (
-                    session.query(YouTubeChannel)
-                    .filter_by(is_active=True)
-                    .order_by(YouTubeChannel.priority)
-                    .all()
-                )
+                query = session.query(ContentSource).filter_by(is_active=True)
+                if source_type:
+                    query = query.filter_by(source_type=source_type)
+                objs = query.all()
+                
+                # Sort deterministically by priority (from config, descending) then name (ascending)
+                def get_priority(obj):
+                    try:
+                        return int(obj.config.get("priority", 0)) if isinstance(obj.config, dict) else 0
+                    except (ValueError, TypeError):
+                        return 0
+
+                objs.sort(key=lambda x: (-get_priority(x), x.name or ""))
                 return [obj.to_dict() for obj in objs]
         except Exception as e:
-            logger.error(f"Failed to get active channels: {e}")
+            logger.error(f"Failed to get active sources: {e}")
             return []
 
-    def get_channel_by_id(self, channel_id: str) -> Optional[dict]:
+    def get_source_by_id(self, source_id: str) -> Optional[dict]:
         if not self.is_available:
             return None
         try:
             with get_session() as session:
                 obj = (
-                    session.query(YouTubeChannel)
-                    .filter_by(id=channel_id)
+                    session.query(ContentSource)
+                    .filter_by(id=source_id)
                     .first()
                 )
                 return obj.to_dict() if obj else None
         except Exception as e:
-            logger.error(f"Failed to get channel {channel_id}: {e}")
+            logger.error(f"Failed to get source {source_id}: {e}")
             return None
 
-    def get_channel_by_yt_id(self, yt_channel_id: str) -> Optional[dict]:
-        """Look up a channel by its YouTube channel ID (not the database UUID)."""
-        if not self.is_available:
-            return None
-        try:
-            with get_session() as session:
-                obj = (
-                    session.query(YouTubeChannel)
-                    .filter_by(channel_id=yt_channel_id)
-                    .first()
-                )
-                return obj.to_dict() if obj else None
-        except Exception as e:
-            logger.error(f"Failed to get channel by YT ID {yt_channel_id}: {e}")
-            return None
-
-    def list_channels(self) -> list:
+    def list_sources(self) -> list:
         if not self.is_available:
             return []
         try:
             with get_session() as session:
                 objs = (
-                    session.query(YouTubeChannel)
-                    .order_by(YouTubeChannel.channel_name)
+                    session.query(ContentSource)
+                    .order_by(ContentSource.name)
                     .all()
                 )
                 return [obj.to_dict() for obj in objs]
         except Exception as e:
-            logger.error(f"Failed to list channels: {e}")
+            logger.error(f"Failed to list sources: {e}")
             return []
 
-    def add_channel(self, channel_data: dict) -> Optional[dict]:
+    def add_source(self, source_data: dict) -> Optional[dict]:
         if not self.is_available:
             return None
         try:
             with get_session() as session:
-                obj = YouTubeChannel(**channel_data)
+                obj = ContentSource(**source_data)
                 session.add(obj)
-                session.flush()
+                session.commit()
                 return obj.to_dict()
         except Exception as e:
-            logger.error(f"Failed to add channel: {e}")
+            logger.error(f"Failed to add source: {e}")
             return None
 
-    def update_channel(self, channel_id: str, updates: dict) -> Optional[dict]:
+    def update_source(self, source_id: str, updates: dict) -> Optional[dict]:
         if not self.is_available:
             return None
         try:
             with get_session() as session:
                 obj = (
-                    session.query(YouTubeChannel)
-                    .filter_by(id=channel_id)
+                    session.query(ContentSource)
+                    .filter_by(id=source_id)
                     .first()
                 )
                 if not obj:
                     return None
                 for key, value in updates.items():
                     setattr(obj, key, value)
-                session.flush()
+                session.commit()
                 return obj.to_dict()
         except Exception as e:
-            logger.error(f"Failed to update channel {channel_id}: {e}")
+            logger.error(f"Failed to update source {source_id}: {e}")
             return None
 
-    def delete_channel(self, channel_id: str) -> bool:
+    def delete_source(self, source_id: str) -> bool:
         if not self.is_available:
             return False
         try:
             with get_session() as session:
                 obj = (
-                    session.query(YouTubeChannel)
-                    .filter_by(id=channel_id)
+                    session.query(ContentSource)
+                    .filter_by(id=source_id)
                     .first()
                 )
                 if not obj:
                     return False
                 session.delete(obj)
+                session.commit()
                 return True
         except Exception as e:
-            logger.error(f"Failed to delete channel {channel_id}: {e}")
+            logger.error(f"Failed to delete source {source_id}: {e}")
             return False
 
-    def update_channel_scanned(self, channel_id: str):
+    def update_source_last_scanned(self, source_id: str):
         if not self.is_available:
             return
         try:
             with get_session() as session:
                 obj = (
-                    session.query(YouTubeChannel)
-                    .filter_by(id=channel_id)
+                    session.query(ContentSource)
+                    .filter_by(id=source_id)
                     .first()
                 )
                 if obj:
-                    obj.last_scanned_at = datetime.now(timezone.utc)
+                    # using config jsonb to store last_scanned_at
+                    config = dict(obj.config or {})
+                    config["last_scanned_at"] = datetime.now(timezone.utc).isoformat()
+                    obj.config = config
+                    session.commit()
         except Exception as e:
             logger.error(
-                f"Failed to update scan time for channel {channel_id}: {e}"
+                f"Failed to update scan time for source {source_id}: {e}"
             )
 
     # =========================================================================
-    # YouTube Videos
+    # Content Items
     # =========================================================================
 
-    def insert_youtube_video(self, video_data: dict) -> Optional[dict]:
+    def insert_content_item(self, item_data: dict) -> Optional[dict]:
         if not self.is_available:
             return None
         try:
             with get_session() as session:
-                obj = YouTubeVideo(**video_data)
+                obj = ContentItem(**item_data)
                 session.add(obj)
-                session.flush()
+                session.commit()
                 return obj.to_dict()
         except Exception as e:
             logger.error(
-                f"Failed to insert video {video_data.get('video_id')}: {e}"
+                f"Failed to insert item {item_data.get('external_id')}: {e}"
             )
             return None
 
-    def get_existing_video_ids(self, video_ids: list[str]) -> set:
-        if not self.is_available or not video_ids:
+    def get_existing_item_external_ids(self, source_id: str, external_ids: list[str]) -> set:
+        if not self.is_available or not external_ids:
             return set()
         try:
             with get_session() as session:
                 rows = (
-                    session.query(YouTubeVideo.video_id)
-                    .filter(YouTubeVideo.video_id.in_(video_ids))
+                    session.query(ContentItem.external_id)
+                    .filter(ContentItem.source_id == source_id)
+                    .filter(ContentItem.external_id.in_(external_ids))
                     .all()
                 )
                 return {row[0] for row in rows}
         except Exception as e:
-            logger.error(f"Failed to check existing videos: {e}")
+            logger.error(f"Failed to check existing items: {e}")
             return set()
 
-    def get_videos_by_status(self, status: str, limit: int = 100) -> list:
+    def get_items_by_status(self, status: str, limit: int = 100) -> list:
         if not self.is_available:
             return []
         try:
             with get_session() as session:
                 objs = (
-                    session.query(YouTubeVideo)
-                    .options(joinedload(YouTubeVideo.channel))
-                    .filter(YouTubeVideo.status == status)
-                    .order_by(YouTubeVideo.discovered_at.desc())
+                    session.query(ContentItem)
+                    .options(joinedload(ContentItem.source))
+                    .filter(ContentItem.status == status)
+                    .order_by(desc(ContentItem.discovered_at))
                     .limit(limit)
                     .all()
                 )
-                return [obj.to_dict(include_channel=True) for obj in objs]
+                return [obj.to_dict(include_source=True) for obj in objs]
         except Exception as e:
-            logger.error(f"Failed to get videos by status '{status}': {e}")
+            logger.error(f"Failed to get items by status '{status}': {e}")
             return []
 
-    def list_youtube_videos(
+    def list_content_items(
         self,
         status: Optional[str] = None,
         is_technical: Optional[bool] = None,
-        channel_id: Optional[str] = None,
+        source_id: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list:
@@ -384,106 +429,124 @@ class DatabaseService:
         try:
             with get_session() as session:
                 query = (
-                    session.query(YouTubeVideo)
-                    .options(joinedload(YouTubeVideo.channel))
-                    .order_by(YouTubeVideo.discovered_at.desc())
+                    session.query(ContentItem)
+                    .options(joinedload(ContentItem.source))
+                    .order_by(desc(ContentItem.discovered_at))
                 )
                 if status:
-                    query = query.filter(YouTubeVideo.status == status)
-                if is_technical is not None:
+                    query = query.filter(ContentItem.status == status)
+                if is_technical is True:
                     query = query.filter(
-                        YouTubeVideo.is_technical == is_technical
+                        ContentItem.technical_score >= 4
                     )
-                if channel_id:
-                    query = query.filter(YouTubeVideo.channel_id == channel_id)
+                elif is_technical is False:
+                    query = query.filter(
+                        ContentItem.technical_score < 4
+                    )
+                if source_id:
+                    query = query.filter(ContentItem.source_id == source_id)
                 objs = query.offset(offset).limit(limit).all()
-                return [obj.to_dict(include_channel=True) for obj in objs]
+                return [obj.to_dict(include_source=True) for obj in objs]
         except Exception as e:
-            logger.error(f"Failed to list youtube videos: {e}")
+            logger.error(f"Failed to list content items: {e}")
             return []
 
-    def get_video_by_id(self, video_id: str) -> Optional[dict]:
+    def get_item_by_id(self, item_id: str) -> Optional[dict]:
         if not self.is_available:
             return None
         try:
             with get_session() as session:
                 obj = (
-                    session.query(YouTubeVideo)
-                    .options(joinedload(YouTubeVideo.channel))
-                    .filter_by(id=video_id)
+                    session.query(ContentItem)
+                    .options(joinedload(ContentItem.source))
+                    .filter_by(id=item_id)
                     .first()
                 )
-                return obj.to_dict(include_channel=True) if obj else None
+                return obj.to_dict(include_source=True) if obj else None
         except Exception as e:
-            logger.error(f"Failed to get video {video_id}: {e}")
+            logger.error(f"Failed to get item {item_id}: {e}")
             return None
 
-    def update_youtube_video(
-        self, video_id: str, updates: dict
+    def update_content_item(
+        self, item_id: str, updates: dict
     ) -> Optional[dict]:
         if not self.is_available:
             return None
         try:
             with get_session() as session:
-                obj = session.query(YouTubeVideo).filter_by(id=video_id).first()
+                obj = session.query(ContentItem).filter_by(id=item_id).first()
                 if not obj:
                     return None
                 for key, value in updates.items():
                     setattr(obj, key, value)
-                session.flush()
+                session.commit()
                 return obj.to_dict()
         except Exception as e:
-            logger.error(f"Failed to update video {video_id}: {e}")
+            logger.error(f"Failed to update item {item_id}: {e}")
             return None
 
     # =========================================================================
-    # Ingestion Runs
+    # Pipeline Runs
     # =========================================================================
 
-    def create_ingestion_run(self, **kwargs) -> Optional[dict]:
+    def create_pipeline_run(self, **kwargs) -> Optional[dict]:
         if not self.is_available:
             return None
         try:
             with get_session() as session:
-                obj = IngestionRun(**kwargs)
+                obj = PipelineRun(**kwargs)
                 session.add(obj)
-                session.flush()
+                session.commit()
                 return obj.to_dict()
         except Exception as e:
-            logger.error(f"Failed to create ingestion run: {e}")
+            logger.error(f"Failed to create pipeline run: {e}")
             return None
 
-    def complete_ingestion_run(self, run_id: str, **kwargs) -> Optional[dict]:
+    def complete_pipeline_run(self, run_id: str, **kwargs) -> Optional[dict]:
         if not self.is_available:
             return None
         try:
             with get_session() as session:
-                obj = session.query(IngestionRun).filter_by(id=run_id).first()
+                obj = session.query(PipelineRun).filter_by(id=run_id).first()
                 if not obj:
                     return None
                 for key, value in kwargs.items():
                     setattr(obj, key, value)
-                session.flush()
+                
+                # Also update last_run_status and last_run_id on source
+                if obj.source_id:
+                    source = session.query(ContentSource).filter_by(id=obj.source_id).first()
+                    if source:
+                        source.last_run_id = obj.id
+                        source.last_run_status = obj.status
+                
+                session.commit()
                 return obj.to_dict()
         except Exception as e:
-            logger.error(f"Failed to complete ingestion run {run_id}: {e}")
+            logger.error(f"Failed to complete pipeline run {run_id}: {e}")
             return None
 
-    def list_ingestion_runs(self, limit: int = 50) -> list:
+    def list_pipeline_runs(self, limit: int = 50) -> list:
         if not self.is_available:
             return []
         try:
             with get_session() as session:
                 objs = (
-                    session.query(IngestionRun)
-                    .options(joinedload(IngestionRun.channel))
-                    .order_by(IngestionRun.created_at.desc())
+                    session.query(PipelineRun)
+                    .options(joinedload(PipelineRun.source))
+                    .order_by(desc(PipelineRun.started_at))
                     .limit(limit)
                     .all()
                 )
-                return [obj.to_dict(include_channel=True) for obj in objs]
+                res = []
+                for obj in objs:
+                    d = obj.to_dict()
+                    if obj.source:
+                        d['content_source'] = {'name': obj.source.name, 'slug': obj.source.slug}
+                    res.append(d)
+                return res
         except Exception as e:
-            logger.error(f"Failed to list ingestion runs: {e}")
+            logger.error(f"Failed to list pipeline runs: {e}")
             return []
 
 

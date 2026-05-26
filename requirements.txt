@@ -16,12 +16,14 @@ feedparser==6.0.10
 PyYAML==6.0.1
 librosa==0.10.2.post1
 fastapi==0.111.0
-PyJWT==2.9.0
+uvicorn>=0.30.0
+PyJWT==2.12.1
 cryptography==43.0.1
 psutil==7.0.0
 openai==1.98.0
 pytest-asyncio==0.21.0
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0
-google-genai>=1.0.0
+google-genai>=0.8.0
+google-generativeai>=0.3.2
 google-api-python-client>=2.100.0

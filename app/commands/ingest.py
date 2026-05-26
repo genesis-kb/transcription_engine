@@ -25,7 +25,7 @@ def scan():
         result = response.json()
         if response.status_code == 200:
             logger.info(
-                f"Scan complete: {result.get('videos_discovered', 0)} new videos discovered."
+                f"Scan complete: {result.get('items_discovered', 0)} new items discovered."
             )
             errors = result.get("errors", [])
             if errors:
@@ -41,7 +41,7 @@ def scan():
 
 @ingest.command()
 def classify():
-    """Classify all pending videos using LLM."""
+    """Classify all pending items using LLM."""
     url = get_transcription_url()
     try:
         response = requests.post(f"{url}/ingestion/classify")
@@ -49,9 +49,9 @@ def classify():
         if response.status_code == 200:
             logger.info(
                 f"Classification complete: "
-                f"{result.get('videos_classified', 0)} classified, "
-                f"{result.get('videos_approved', 0)} approved, "
-                f"{result.get('videos_rejected', 0)} rejected."
+                f"{result.get('items_classified', 0)} classified, "
+                f"{result.get('items_approved', 0)} approved, "
+                f"{result.get('items_rejected', 0)} rejected."
             )
             errors = result.get("errors", [])
             if errors:
@@ -67,7 +67,7 @@ def classify():
 
 @ingest.command()
 def run():
-    """Run full pipeline: scan → classify → queue approved videos."""
+    """Run full pipeline: scan → classify → queue approved items."""
     url = get_transcription_url()
     try:
         response = requests.post(f"{url}/ingestion/run")
@@ -79,14 +79,14 @@ def run():
 
             logger.info("Full ingestion pipeline complete:")
             logger.info(
-                f"  Scan: {scan.get('videos_discovered', 0)} videos discovered"
+                f"  Scan: {scan.get('items_discovered', 0)} items discovered"
             )
             logger.info(
-                f"  Classify: {classify_data.get('videos_approved', 0)} approved, "
-                f"{classify_data.get('videos_rejected', 0)} rejected"
+                f"  Classify: {classify_data.get('items_approved', 0)} approved, "
+                f"{classify_data.get('items_rejected', 0)} rejected"
             )
             logger.info(
-                f"  Queue: {queue.get('videos_queued', 0)} videos sent to pipeline"
+                f"  Queue: {queue.get('items_queued', 0)} items sent to pipeline"
             )
         else:
             logger.error(
@@ -100,86 +100,90 @@ def run():
 
 
 @ingest.group()
-def channels():
-    """Manage monitored YouTube channels."""
+def sources():
+    """Manage monitored content sources."""
     pass
 
 
-@channels.command(name="list")
-def list_channels():
-    """List all monitored channels."""
+@sources.command(name="list")
+def list_sources():
+    """List all monitored sources."""
     url = get_transcription_url()
     try:
-        response = requests.get(f"{url}/ingestion/channels")
+        response = requests.get(f"{url}/ingestion/sources")
         result = response.json()
         data = result.get("data", [])
         if not data:
-            logger.info("No channels configured.")
+            logger.info("No sources configured.")
             return
         for ch in data:
             active = "active" if ch.get("is_active") else "inactive"
+            config = ch.get("config", {})
             logger.info(
-                f"  [{active}] {ch['channel_name']} "
-                f"(priority: {ch.get('priority', '-')}, "
-                f"category: {ch.get('category', '-')}, "
+                f"  [{active}] {ch['name']} "
+                f"(priority: {config.get('priority', '-')}, "
+                f"category: {config.get('category', '-')}, "
                 f"id: {ch['id']})"
             )
     except Exception as e:
-        logger.error(f"Failed to list channels: {e}")
+        logger.error(f"Failed to list sources: {e}")
 
 
-@channels.command(name="add")
-@click.argument("channel_id")
-@click.argument("channel_name")
+@sources.command(name="add")
+@click.argument("source_id")
+@click.argument("source_name")
 @click.option(
     "--category",
     default=None,
-    help="Channel category (e.g., conference, podcast)",
+    help="Source category (e.g., conference, podcast)",
 )
 @click.option(
     "--priority", default=3, type=int, help="Priority 1 (high) to 5 (low)"
 )
 @click.option(
-    "--url", "channel_url", default=None, help="Full YouTube channel URL"
+    "--url", "source_url", default=None, help="Full channel/source URL"
 )
-def add_channel(channel_id, channel_name, category, priority, channel_url):
-    """Add a YouTube channel to monitor. Requires CHANNEL_ID and CHANNEL_NAME."""
+def add_source(source_id, source_name, category, priority, source_url):
+    """Add a content source to monitor. Requires SOURCE_ID and SOURCE_NAME."""
     url = get_transcription_url()
     payload = {
-        "channel_id": channel_id,
-        "channel_name": channel_name,
-        "priority": priority,
+        "slug": source_id,
+        "name": source_name,
+        "source_type": "youtube",
+        "base_url": source_url,
+        "config": {
+            "yt_channel_id": source_id,
+            "priority": priority,
+        }
     }
     if category:
-        payload["category"] = category
-    if channel_url:
-        payload["channel_url"] = channel_url
+        payload["config"]["category"] = category
 
     try:
-        response = requests.post(f"{url}/ingestion/channels", json=payload)
+        response = requests.post(f"{url}/ingestion/sources", json=payload)
         result = response.json()
         if response.status_code == 200:
-            logger.info(f"Channel added: {channel_name}")
+            logger.info(f"Source added: {source_name}")
         else:
             logger.error(f"Failed: {result.get('detail', 'Unknown error')}")
     except Exception as e:
-        logger.error(f"Failed to add channel: {e}")
+        logger.error(f"Failed to add source: {e}")
 
 
-# ── Video subcommands ────────────────────────────────────────────────────────
+# ── Item subcommands ────────────────────────────────────────────────────────
 
 
 @ingest.group()
-def videos():
-    """View and manage discovered videos."""
+def items():
+    """View and manage discovered items."""
     pass
 
 
-@videos.command(name="list")
+@items.command(name="list")
 @click.option(
     "--status",
     default=None,
-    help="Filter by status (pending, classified, queued, transcribed, skipped)",
+    help="Filter by status (pending, classified, queued, in_queue, transcribed, skipped)",
 )
 @click.option(
     "--technical/--non-technical",
@@ -187,8 +191,8 @@ def videos():
     help="Filter by technical classification",
 )
 @click.option("--limit", default=50, type=int, help="Max results to show")
-def list_videos(status, technical, limit):
-    """List discovered videos."""
+def list_items(status, technical, limit):
+    """List discovered items."""
     url = get_transcription_url()
     params = {"limit": limit}
     if status:
@@ -197,19 +201,20 @@ def list_videos(status, technical, limit):
         params["is_technical"] = technical
 
     try:
-        response = requests.get(f"{url}/ingestion/videos", params=params)
+        response = requests.get(f"{url}/ingestion/items", params=params)
         result = response.json()
         data = result.get("data", [])
         if not data:
-            logger.info("No videos found matching filters.")
+            logger.info("No items found matching filters.")
             return
         for v in data:
+            tech_score = v.get("technical_score")
             tech = (
                 "technical"
-                if v.get("is_technical")
+                if tech_score and tech_score >= 4
                 else (
                     "non-technical"
-                    if v.get("is_technical") is False
+                    if tech_score and tech_score < 4
                     else "unclassified"
                 )
             )
@@ -219,14 +224,14 @@ def list_videos(status, technical, limit):
                 f"(id: {v['id']})"
             )
     except Exception as e:
-        logger.error(f"Failed to list videos: {e}")
+        logger.error(f"Failed to list items: {e}")
 
 
-@videos.command(name="approve")
-@click.argument("video_id")
+@items.command(name="approve")
+@click.argument("item_id")
 @click.option("--reason", default=None, help="Reason for approval")
-def approve_video(video_id, reason):
-    """Manually approve a video for transcription."""
+def approve_item(item_id, reason):
+    """Manually approve an item for transcription."""
     url = get_transcription_url()
     payload = {"is_technical": True}
     if reason:
@@ -234,22 +239,22 @@ def approve_video(video_id, reason):
 
     try:
         response = requests.put(
-            f"{url}/ingestion/videos/{video_id}", json=payload
+            f"{url}/ingestion/items/{item_id}", json=payload
         )
         result = response.json()
         if response.status_code == 200:
-            logger.info("Video approved and queued for transcription.")
+            logger.info("Item approved and queued for transcription.")
         else:
             logger.error(f"Failed: {result.get('detail', 'Unknown error')}")
     except Exception as e:
-        logger.error(f"Failed to approve video: {e}")
+        logger.error(f"Failed to approve item: {e}")
 
 
-@videos.command(name="reject")
-@click.argument("video_id")
+@items.command(name="reject")
+@click.argument("item_id")
 @click.option("--reason", default=None, help="Reason for rejection")
-def reject_video(video_id, reason):
-    """Manually reject a video."""
+def reject_item(item_id, reason):
+    """Manually reject an item."""
     url = get_transcription_url()
     payload = {"is_technical": False}
     if reason:
@@ -257,15 +262,15 @@ def reject_video(video_id, reason):
 
     try:
         response = requests.put(
-            f"{url}/ingestion/videos/{video_id}", json=payload
+            f"{url}/ingestion/items/{item_id}", json=payload
         )
         result = response.json()
         if response.status_code == 200:
-            logger.info("Video rejected and skipped.")
+            logger.info("Item rejected and skipped.")
         else:
             logger.error(f"Failed: {result.get('detail', 'Unknown error')}")
     except Exception as e:
-        logger.error(f"Failed to reject video: {e}")
+        logger.error(f"Failed to reject item: {e}")
 
 
 commands = ingest

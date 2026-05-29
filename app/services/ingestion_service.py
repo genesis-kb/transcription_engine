@@ -109,6 +109,14 @@ class IngestionService:
         if not url and source_type == "youtube":
             url = f"https://www.youtube.com/watch?v={item['external_id']}"
 
+        if not url:
+            raise ValueError(
+                "Cannot queue item without a source URL: "
+                f"external_id={item.get('external_id')}, "
+                f"source_type={source_type or 'unknown'}, "
+                f"title={item.get('title', item.get('external_id', 'unknown'))}"
+            )
+
         import requests
 
         from app.config import settings

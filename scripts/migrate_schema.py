@@ -50,6 +50,7 @@ def run_migration(dry_run=False):
                 if not dry_run:
                     logger.info("Running Base.metadata.create_all to ensure tables exist...")
                     Base.metadata.create_all(conn)
+                logger.info("Migration complete!")
                 return
 
             # 2. Rename old tables to prevent conflicts with new models

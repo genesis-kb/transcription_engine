@@ -6,7 +6,7 @@ from sqlalchemy.orm import joinedload
 
 from app.database import get_session, is_db_configured
 from app.logging import get_logger
-from app.models import ContentItem, ContentItemSpeaker, ContentSource, PipelineRun, Speaker, Summary, Taxonomy, Transcript
+from app.models import ContentItem, ContentItemSpeaker, ContentSource, PipelineRun, Speaker, Summary, Transcript
 
 logger = get_logger()
 

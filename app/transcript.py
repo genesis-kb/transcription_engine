@@ -612,7 +612,7 @@ class RSS(Source):
                 ),
                 None,
             )
-            if enclosure.type in [
+            if enclosure and enclosure.get("type") in [
                 "audio/mpeg",
                 "audio/wav",
                 "audio/x-m4a",
@@ -648,3 +648,65 @@ class RSS(Source):
                 self.logger.warning(
                     f"Invalid source for '{entry.title}'. '{enclosure.type}' not supported for RSS feeds, source skipped."
                 )
+
+class Scraper(Source):
+    def __init__(self, source):
+        super().__init__(
+            source_file=source.source_file,
+            link=source.link,
+            loc=source.loc,
+            local=source.local,
+            title=source.title,
+            summary=source.summary,
+            episode=source.episode,
+            date=source.event_date,
+            tags=source.tags,
+            category=source.category,
+            speakers=source.speakers,
+            preprocess=source.preprocess,
+        )
+        self.type = "scraper"
+        self.is_text_only = True
+        self.extracted_text = None
+        self.chapters = []
+        self.description = ""
+        self.author = ""
+        self.youtube_metadata = None
+        self.__config_source()
+
+    def __config_source(self):
+        import requests
+        from bs4 import BeautifulSoup
+        try:
+            self.logger.info(f"Scraping text from: {self.source_file}")
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5"
+            }
+            response = requests.get(self.source_file, headers=headers, timeout=15)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            if not self.title:
+                self.title = soup.title.string.strip() if soup.title else self.source_file
+                
+            for script in soup(["script", "style", "nav", "footer", "header", "aside"]):
+                script.extract()
+            
+            text = soup.get_text(separator='\n')
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            self.extracted_text = '\n'.join(chunk for chunk in chunks if chunk)
+            self.logger.info(f"Successfully scraped article: {self.title}")
+        except Exception as e:
+            self.logger.error(f"Failed to scrape article {self.source_file}: {e}")
+            raise Exception(f"Failed to scrape article: {e}")
+
+    def download(self, tmp_dir):
+        # We don't download audio for scraped text articles
+        return None
+
+    def process(self, working_dir):
+        """No media to process for a text scraper"""
+        return None

@@ -23,7 +23,7 @@ from app.services.metadata_extractor import MetadataExtractorService
 from app.services.summarizer import SummarizerService
 
 # from app.metadata_parser import MetadataParser
-from app.transcript import RSS, Audio, Playlist, Source, Transcript, Video, _yt_opts
+from app.transcript import RSS, Audio, Playlist, Source, Transcript, Video, Scraper, _yt_opts
 
 
 class Transcription:
@@ -262,11 +262,13 @@ class Transcription:
                 raise InvalidSourceError(f"{source.source_file}: yt-dlp extraction failed: {e}") from e
 
         try:
-            if source.source_file.lower().endswith(
+            lower_url = source.source_file.lower()
+            if lower_url.endswith(
                 (".mp3", ".wav", ".m4a", ".aac")
             ):
                 return Audio(source=source, chapters=chapters)
-            if source.source_file.endswith(("rss", ".xml")):
+            
+            if lower_url.endswith(("rss", ".xml")) or "feed" in lower_url.split("/"):
                 return RSS(source=source)
 
             if youtube_metadata is not None:
@@ -277,10 +279,15 @@ class Transcription:
                     youtube_metadata=youtube_metadata,
                     chapters=chapters,
                 )
-            if source.source_file.lower().endswith((".mp4", ".webm", ".mov")):
+            if lower_url.endswith((".mp4", ".webm", ".mov")):
                 # regular remote video, not youtube
                 source.preprocess = False
                 return Video(source=source)
+                
+            # If it's a web page, not youtube, use Scraper
+            if source.source_file.startswith("http") and not ("youtube.com" in lower_url or "youtu.be" in lower_url):
+                return Scraper(source=source)
+
             youtube_source = check_if_youtube(source)
             if youtube_source == "unknown":
                 raise InvalidSourceError(f"{source.source_file}: Unknown source type")
@@ -452,7 +459,7 @@ class Transcription:
                     self._new_transcript_from_source(entry)
                 else:
                     transcription_sources["exist"].append(entry.source_file)
-        elif source.type in ["audio", "video"]:
+        elif source.type in ["audio", "video", "scraper"]:
             if source.media not in excluded_media:
                 transcription_sources["added"].append(source.source_file)
                 self._new_transcript_from_source(source)
@@ -600,8 +607,12 @@ class Transcription:
             if self.test_mode:
                 t.outputs["raw"] = test_transcript or "test-mode"
             else:
-                ensure_media_available(t)
-                self.service.transcribe(t)
+                if getattr(t.source, 'is_text_only', False):
+                    t.outputs["raw"] = t.source.extracted_text
+                    self.logger.info("Skipped ASR for text-only source")
+                else:
+                    ensure_media_available(t)
+                    self.service.transcribe(t)
 
         def do_metadata_extraction(t: Transcript) -> None:
             if self.metadata_extractor and not self.test_mode:

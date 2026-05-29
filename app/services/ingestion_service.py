@@ -108,6 +108,14 @@ class IngestionService:
         source_info = item.get("content_source") or {}
         source_slug = source_info.get("slug", "misc")
 
+        if not url:
+            raise ValueError(
+                "Cannot queue item without a source URL: "
+                f"external_id={item.get('external_id')}, "
+                f"source_type={source_type or 'unknown'}, "
+                f"title={item.get('title', item.get('external_id', 'unknown'))}"
+            )
+
         import requests
 
         from app.config import settings

@@ -94,7 +94,7 @@ class ContentSource(Base):
     last_run_status = Column(Text)
     last_run_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("pipeline_runs.id", use_alter=True, name="fk_sources_last_run"),
+        ForeignKey("pipeline_runs.id", use_alter=True, name="fk_sources_last_run", ondelete="SET NULL"),
     )
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
 

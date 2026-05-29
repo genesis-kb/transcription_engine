@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.logging import get_logger
 from app.services.database_service import get_database_service
@@ -11,26 +11,25 @@ logger = get_logger()
 router = APIRouter(tags=["Ingestion"])
 
 
-class ChannelCreate(BaseModel):
-    channel_id: str
-    channel_name: str
-    channel_url: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    priority: int = 3
+class SourceCreate(BaseModel):
+    name: str
+    slug: str
+    source_type: str = "youtube"
+    base_url: Optional[str] = None
+    config: dict = Field(default_factory=dict)
     is_active: bool = True
 
 
-class ChannelUpdate(BaseModel):
-    channel_name: Optional[str] = None
-    channel_url: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    priority: Optional[int] = None
+class SourceUpdate(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    source_type: Optional[str] = None
+    base_url: Optional[str] = None
+    config: Optional[dict] = None
     is_active: Optional[bool] = None
 
 
-class VideoOverride(BaseModel):
+class ItemOverride(BaseModel):
     is_technical: bool
     classification_reason: Optional[str] = None
 
@@ -60,8 +59,8 @@ async def run_full_pipeline():
 
 
 @router.post("/scan")
-async def scan_all_channels():
-    """Trigger a scan of all active channels."""
+async def scan_all_sources():
+    """Trigger a scan of all active sources."""
     from app.services.channel_scanner import ChannelScanner
 
     try:
@@ -73,70 +72,72 @@ async def scan_all_channels():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/scan/{channel_id}")
-async def scan_channel(channel_id: str):
-    """Trigger a scan of a specific channel."""
+@router.post("/scan/{source_id}")
+async def scan_source(source_id: str):
+    """Trigger a scan of a specific source."""
     from app.services.channel_scanner import ChannelScanner
 
     try:
         scanner = ChannelScanner()
-        result = scanner.scan_channel_by_id(channel_id)
+        result = scanner.scan_channel_by_id(source_id)
         return {"status": "success", **result}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Scan failed for channel {channel_id}: {e}")
+        logger.error(f"Scan failed for source {source_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/channels")
-async def list_channels():
-    """List all monitored channels."""
+@router.get("/sources")
+async def list_sources():
+    """List all monitored sources."""
     db = _get_db()
-    data = db.list_channels()
+    data = db.list_sources()
     return {"data": data}
 
 
-@router.post("/channels")
-async def add_channel(channel: ChannelCreate):
-    """Add a new channel to monitor."""
+@router.post("/sources")
+async def add_source(source: SourceCreate):
+    """Add a new source to monitor."""
     db = _get_db()
-    result = db.add_channel(channel.model_dump())
+    result = db.add_source(source.model_dump())
     if result is None:
-        raise HTTPException(status_code=500, detail="Failed to add channel.")
+        raise HTTPException(status_code=500, detail="Failed to add source.")
     return {"status": "success", "data": result}
 
 
-@router.put("/channels/{channel_id}")
-async def update_channel(channel_id: str, updates: ChannelUpdate):
-    """Update a monitored channel."""
+@router.put("/sources/{source_id}")
+async def update_source(source_id: str, updates: SourceUpdate):
+    """Update a monitored source."""
     db = _get_db()
     update_data = {
         k: v for k, v in updates.model_dump().items() if v is not None
     }
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update.")
-    result = db.update_channel(channel_id, update_data)
+        
+
+    result = db.update_source(source_id, update_data)
     if result is None:
-        raise HTTPException(status_code=404, detail="Channel not found.")
+        raise HTTPException(status_code=404, detail="Source not found.")
     return {"status": "success", "data": result}
 
 
-@router.delete("/channels/{channel_id}")
-async def delete_channel(channel_id: str):
-    """Remove a monitored channel."""
+@router.delete("/sources/{source_id}")
+async def delete_source(source_id: str):
+    """Remove a monitored source."""
     db = _get_db()
-    success = db.delete_channel(channel_id)
+    success = db.delete_source(source_id)
     if not success:
         raise HTTPException(
-            status_code=404, detail="Channel not found or delete failed."
+            status_code=404, detail="Source not found or delete failed."
         )
-    return {"status": "success", "message": "Channel deleted."}
+    return {"status": "success", "message": "Source deleted."}
 
 
 @router.post("/classify")
 async def classify_all_pending():
-    """Classify all pending videos using LLM."""
+    """Classify all pending items using LLM."""
     from app.services.content_classifier import ContentClassifier
 
     try:
@@ -148,59 +149,68 @@ async def classify_all_pending():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/classify/{video_id}")
-async def classify_video(video_id: str):
-    """Classify a specific video."""
+@router.post("/classify/{item_id}")
+async def classify_item(item_id: str):
+    """Classify a specific item."""
     from app.services.content_classifier import ContentClassifier
 
     try:
         classifier = ContentClassifier()
-        result = classifier.classify_video_by_id(video_id)
+        result = classifier.classify_item_by_id(item_id)
         return {"status": "success", **result}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Classification failed for video {video_id}: {e}")
+        logger.error(f"Classification failed for item {item_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/videos")
-async def list_videos(
+@router.get("/items")
+async def list_items(
     status: Optional[str] = None,
     is_technical: Optional[bool] = None,
-    channel_id: Optional[str] = None,
+    source_id: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
 ):
-    """List discovered videos with optional filters."""
+    """List discovered items with optional filters."""
     db = _get_db()
-    data = db.list_youtube_videos(
+    
+    data = db.list_content_items(
         status=status,
         is_technical=is_technical,
-        channel_id=channel_id,
+        source_id=source_id,
         limit=limit,
         offset=offset,
     )
     return {"data": data}
 
 
-@router.put("/videos/{video_id}")
-async def override_video(video_id: str, override: VideoOverride):
-    """Manually approve or reject a video."""
+@router.put("/items/{item_id}")
+async def override_item(item_id: str, override: ItemOverride):
+    """Manually approve or reject an item."""
     db = _get_db()
     from datetime import datetime, timezone
+    
+    tech_score = 5 if override.is_technical else 1
 
     updates = {
-        "is_technical": override.is_technical,
-        "classification_reason": override.classification_reason
-        or "Manual override",
-        "classification_confidence": 1.0,
+        "technical_score": tech_score,
         "status": "queued" if override.is_technical else "skipped",
-        "classified_at": datetime.now(timezone.utc).isoformat(),
+        # Keep source_metadata updated with the reason if we want to preserve it
     }
-    result = db.update_youtube_video(video_id, updates)
+    
+    # Update source_metadata to include reason
+    item = db.get_item_by_id(item_id)
+    if item:
+        meta = item.get("source_metadata", {})
+        meta["classification_reason"] = override.classification_reason or "Manual override"
+        meta["classification_confidence"] = 1.0
+        updates["source_metadata"] = meta
+
+    result = db.update_content_item(item_id, updates)
     if result is None:
-        raise HTTPException(status_code=404, detail="Video not found.")
+        raise HTTPException(status_code=404, detail="Item not found.")
     return {"status": "success", "data": result}
 
 
@@ -208,5 +218,5 @@ async def override_video(video_id: str, override: VideoOverride):
 async def list_runs(limit: int = 50):
     """List ingestion run history."""
     db = _get_db()
-    data = db.list_ingestion_runs(limit=limit)
+    data = db.list_pipeline_runs(limit=limit)
     return {"data": data}

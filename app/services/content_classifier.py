@@ -15,7 +15,7 @@ logger = get_logger()
 
 
 class ContentClassifier:
-    """Classifies pending YouTube videos as technical or non-technical."""
+    """Classifies pending content items as technical or non-technical."""
 
     def __init__(self):
         self._db = get_database_service()
@@ -33,23 +33,22 @@ class ContentClassifier:
         )
 
     def classify_all_pending(self) -> dict:
-        """Classify all videos with status 'pending'.
+        """Classify all items with status 'pending'.
 
         Returns:
             Summary dict with counts.
         """
-        videos = self._db.get_videos_by_status("pending", limit=500)
-        if not videos:
-            logger.info("No pending videos to classify.")
+        items = self._db.get_items_by_status("pending", limit=500)
+        if not items:
+            logger.info("No pending items to classify.")
             return {
-                "videos_classified": 0,
-                "videos_approved": 0,
-                "videos_rejected": 0,
+                "items_classified": 0,
+                "items_approved": 0,
+                "items_rejected": 0,
                 "errors": [],
             }
 
-        run = self._db.create_ingestion_run(
-            run_type="classify",
+        run = self._db.create_pipeline_run(
             started_at=datetime.now(timezone.utc),
         )
         run_id = run["id"] if run else None
@@ -57,26 +56,24 @@ class ContentClassifier:
         classified = approved = rejected = 0
         errors = []
 
-        for video in videos:
+        for item in items:
             try:
-                result = self._classify_video(video)
+                result = self._classify_item(item)
                 classified += 1
                 if result["is_technical"]:
                     approved += 1
                 else:
                     rejected += 1
             except Exception as e:
-                error_msg = f"Error classifying '{video.get('title', video['id'])}': {e}"
+                error_msg = f"Error classifying '{item.get('title', item['id'])}': {e}"
                 logger.error(error_msg)
                 errors.append(error_msg)
 
         if run_id:
-            self._db.complete_ingestion_run(
+            status = 'failed' if errors else 'success'
+            self._db.complete_pipeline_run(
                 run_id,
-                videos_classified=classified,
-                videos_approved=approved,
-                videos_rejected=rejected,
-                errors=errors,
+                status=status,
                 completed_at=datetime.now(timezone.utc),
             )
 
@@ -85,39 +82,41 @@ class ContentClassifier:
             f"{approved} approved, {rejected} rejected."
         )
         return {
-            "videos_classified": classified,
-            "videos_approved": approved,
-            "videos_rejected": rejected,
+            "items_classified": classified,
+            "items_approved": approved,
+            "items_rejected": rejected,
             "errors": errors,
         }
 
-    def classify_video_by_id(self, video_db_id: str) -> dict:
-        """Classify a single video by its database UUID."""
-        video = self._db.get_video_by_id(video_db_id)
-        if not video:
-            raise ValueError(f"Video not found: {video_db_id}")
+    def classify_item_by_id(self, item_db_id: str) -> dict:
+        """Classify a single item by its database UUID."""
+        item = self._db.get_item_by_id(item_db_id)
+        if not item:
+            raise ValueError(f"Item not found: {item_db_id}")
 
-        result = self._classify_video(video)
+        result = self._classify_item(item)
         return result
 
-    def _classify_video(self, video: dict) -> dict:
-        """Classify a single video and update its DB record.
+    def _classify_item(self, item: dict) -> dict:
+        """Classify a single item and update its DB record.
 
         Args:
-            video: Row from youtube_videos table (with joined channel data).
+            item: Row from content_items table (with joined source data).
 
         Returns:
             Classification result dict.
         """
-        # Skip videos outside duration range
-        duration = video.get("duration") or 0
+        source_metadata = item.get("source_metadata", {})
+        duration = source_metadata.get("duration") or 0
+        
+        # Skip items outside duration range
         if duration > 0 and duration < self.min_duration:
             result = {
                 "is_technical": False,
                 "confidence": 1.0,
                 "reason": f"Too short ({duration}s < {self.min_duration}s minimum)",
             }
-            self._save_classification(video["id"], result, status="skipped")
+            self._save_classification(item, result, status="skipped")
             return result
         if duration > 0 and duration > self.max_duration:
             result = {
@@ -125,17 +124,17 @@ class ContentClassifier:
                 "confidence": 1.0,
                 "reason": f"Too long ({duration}s > {self.max_duration}s maximum)",
             }
-            self._save_classification(video["id"], result, status="skipped")
+            self._save_classification(item, result, status="skipped")
             return result
 
         # Get channel info from joined data
-        channel_info = video.get("youtube_channels") or {}
-        channel_category = channel_info.get("category", "unknown")
-        channel_name = channel_info.get("channel_name", "")
+        source_info = item.get("content_source") or {}
+        channel_name = source_info.get("name", "")
+        channel_category = source_info.get("category", source_info.get("slug", "unknown"))
 
-        title = video.get("title", "")
-        description = video.get("description", "")
-        tags = video.get("tags") or []
+        title = item.get("title", "")
+        description = item.get("description", "")
+        tags = source_metadata.get("tags") or []
 
         prompt = self._build_prompt(
             title, description, tags, channel_name, channel_category
@@ -155,7 +154,7 @@ class ContentClassifier:
             # Technical but low confidence — stay classified, don't auto-queue
             status = "classified"
 
-        self._save_classification(video["id"], result, status=status)
+        self._save_classification(item, result, status=status)
 
         logger.info(
             f"  {'APPROVED' if result['is_technical'] else 'REJECTED'} "
@@ -163,16 +162,21 @@ class ContentClassifier:
         )
         return result
 
-    def _save_classification(self, video_id: str, result: dict, status: str):
+    def _save_classification(self, item: dict, result: dict, status: str):
         """Persist classification result to the database."""
-        self._db.update_youtube_video(
-            video_id,
+        item_id = item["id"]
+        source_metadata = item.get("source_metadata", {})
+        source_metadata["classification_reason"] = result["reason"]
+        source_metadata["classification_confidence"] = result["confidence"]
+        
+        tech_score = 5 if result["is_technical"] else 1
+        
+        self._db.update_content_item(
+            item_id,
             {
-                "is_technical": result["is_technical"],
-                "classification_reason": result["reason"],
-                "classification_confidence": result["confidence"],
+                "technical_score": tech_score,
+                "source_metadata": source_metadata,
                 "status": status,
-                "classified_at": datetime.now(timezone.utc),
             },
         )
 

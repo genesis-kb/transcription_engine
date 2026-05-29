@@ -28,60 +28,48 @@ class ChannelScanner:
         return self._youtube
 
     def scan_all_channels(self) -> dict:
-        """Scan all active channels for new videos.
+        """Scan all active channels for new items.
 
         Returns:
             Summary dict with counts and any errors.
         """
-        channels = self._db.get_active_channels()
+        channels = self._db.get_active_sources(source_type="youtube")
         if not channels:
             logger.info("No active channels to scan.")
-            return {"videos_discovered": 0, "errors": []}
-
-        run = self._db.create_ingestion_run(
-            run_type="scan", started_at=datetime.now(timezone.utc)
-        )
-        run_id = run["id"] if run else None
+            return {"items_discovered": 0, "errors": []}
 
         total_discovered = 0
         errors = []
 
         for channel in channels:
             try:
-                count = self._scan_channel(channel)
-                total_discovered += count
+                result = self.scan_channel_by_id(channel["id"])
+                total_discovered += result["items_discovered"]
+                if result.get("errors"):
+                    errors.extend(result["errors"])
             except Exception as e:
-                error_msg = f"Error scanning {channel['channel_name']}: {e}"
+                error_msg = f"Error scanning {channel['name']}: {e}"
                 logger.error(error_msg)
                 errors.append(error_msg)
 
-        if run_id:
-            self._db.complete_ingestion_run(
-                run_id,
-                videos_discovered=total_discovered,
-                errors=errors,
-                completed_at=datetime.now(timezone.utc),
-            )
+        logger.info(f"Scan complete: {total_discovered} new items discovered.")
+        return {"items_discovered": total_discovered, "errors": errors}
 
-        logger.info(f"Scan complete: {total_discovered} new videos discovered.")
-        return {"videos_discovered": total_discovered, "errors": errors}
-
-    def scan_channel_by_id(self, channel_db_id: str) -> dict:
+    def scan_channel_by_id(self, source_id: str) -> dict:
         """Scan a specific channel by its database UUID.
 
         Args:
-            channel_db_id: The UUID of the channel in youtube_channels table.
+            source_id: The UUID of the source in content_sources table.
 
         Returns:
             Summary dict.
         """
-        channel = self._db.get_channel_by_id(channel_db_id)
-        if not channel:
-            raise ValueError(f"Channel not found: {channel_db_id}")
+        channel = self._db.get_source_by_id(source_id)
+        if not channel or channel.get("source_type") != "youtube":
+            raise ValueError(f"YouTube source not found: {source_id}")
 
-        run = self._db.create_ingestion_run(
-            run_type="scan",
-            channel_id=channel_db_id,
+        run = self._db.create_pipeline_run(
+            source_id=source_id,
             started_at=datetime.now(timezone.utc),
         )
         run_id = run["id"] if run else None
@@ -90,33 +78,38 @@ class ChannelScanner:
         try:
             count = self._scan_channel(channel)
         except Exception as e:
-            error_msg = f"Error scanning {channel['channel_name']}: {e}"
+            error_msg = f"Error scanning {channel['name']}: {e}"
             logger.error(error_msg)
             errors.append(error_msg)
             count = 0
 
         if run_id:
-            self._db.complete_ingestion_run(
+            status = 'failed' if errors else 'success'
+            self._db.complete_pipeline_run(
                 run_id,
-                videos_discovered=count,
-                errors=errors,
+                status=status,
                 completed_at=datetime.now(timezone.utc),
             )
 
-        return {"videos_discovered": count, "errors": errors}
+        return {"items_discovered": count, "errors": errors}
 
     def _scan_channel(self, channel: dict) -> int:
-        """Scan a single channel and insert new videos.
+        """Scan a single channel and insert new items.
 
         Args:
-            channel: Row from youtube_channels table.
+            channel: Row from content_sources table.
 
         Returns:
-            Number of new videos discovered.
+            Number of new items discovered.
         """
-        channel_yt_id = channel["channel_id"]
+        config = channel.get("config", {})
+        channel_yt_id = config.get("yt_channel_id")
         channel_db_id = channel["id"]
-        last_scanned = channel.get("last_scanned_at")
+        last_scanned = config.get("last_scanned_at")
+
+        if not channel_yt_id:
+            logger.error(f"Channel {channel['name']} is missing yt_channel_id in config.")
+            return 0
 
         max_results = int(settings.config.get("channel_scan_max_results", "50"))
 
@@ -132,7 +125,7 @@ class ChannelScanner:
             search_params["publishedAfter"] = self._format_rfc3339(last_scanned)
 
         logger.info(
-            f"Scanning channel: {channel['channel_name']} ({channel_yt_id})"
+            f"Scanning channel: {channel['name']} ({channel_yt_id})"
         )
 
         # Paginate through search results
@@ -147,19 +140,18 @@ class ChannelScanner:
             request = self.youtube.search().list_next(request, response)
 
         if not video_ids:
-            logger.info(f"No new videos found for {channel['channel_name']}.")
-            self._db.update_channel_scanned(channel_db_id)
+            logger.info(f"No new items found for {channel['name']}.")
+            self._db.update_source_last_scanned(channel_db_id)
             return 0
 
-        # Filter out videos we already have
-        existing = self._db.get_existing_video_ids(video_ids)
+        existing = self._db.get_existing_item_external_ids(channel_db_id, video_ids)
         new_ids = [vid for vid in video_ids if vid not in existing]
 
         if not new_ids:
             logger.info(
-                f"All videos already known for {channel['channel_name']}."
+                f"All items already known for {channel['name']}."
             )
-            self._db.update_channel_scanned(channel_db_id)
+            self._db.update_source_last_scanned(channel_db_id)
             return 0
 
         # Fetch full video details in batches of 50
@@ -176,12 +168,12 @@ class ChannelScanner:
 
             for item in details_response.get("items", []):
                 video_data = self._parse_video_details(item, channel_db_id)
-                self._db.insert_youtube_video(video_data)
+                self._db.insert_content_item(video_data)
                 videos_inserted += 1
 
-        self._db.update_channel_scanned(channel_db_id)
+        self._db.update_source_last_scanned(channel_db_id)
         logger.info(
-            f"Discovered {videos_inserted} new videos from {channel['channel_name']}."
+            f"Discovered {videos_inserted} new items from {channel['name']}."
         )
         return videos_inserted
 
@@ -192,22 +184,26 @@ class ChannelScanner:
         statistics = item.get("statistics", {})
 
         return {
-            "video_id": item["id"],
-            "channel_id": channel_db_id,
-            "title": snippet.get("title"),
+            "external_id": item["id"],
+            "source_id": channel_db_id,
+            "title": snippet.get("title", "Unknown"),
             "description": snippet.get("description"),
+            "content_type": "video",
+            "url": f"https://www.youtube.com/watch?v={item['id']}",
             "published_at": dateparser.isoparse(snippet["publishedAt"])
             if snippet.get("publishedAt")
             else None,
-            "duration": self._parse_duration(
-                content_details.get("duration", "")
-            ),
-            "tags": snippet.get("tags", []),
-            "thumbnail_url": (
-                snippet.get("thumbnails", {}).get("high", {}).get("url")
-            ),
-            "view_count": int(statistics.get("viewCount", 0)),
             "status": "pending",
+            "source_metadata": {
+                "duration": self._parse_duration(
+                    content_details.get("duration", "")
+                ),
+                "tags": snippet.get("tags", []),
+                "thumbnail_url": (
+                    snippet.get("thumbnails", {}).get("high", {}).get("url")
+                ),
+                "view_count": int(statistics.get("viewCount", 0)),
+            }
         }
 
     @staticmethod

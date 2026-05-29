@@ -232,7 +232,13 @@ async def remove_from_queue(
 
 @router.post("/start/")
 async def start(background_tasks: BackgroundTasks):
-    transcription = get_transcription_instance()
+    if transcription_instance is None:
+        return {
+            "status": "empty",
+            "message": "No items in the transcription queue.",
+        }
+
+    transcription = transcription_instance
 
     if not transcription.transcripts:
         return {

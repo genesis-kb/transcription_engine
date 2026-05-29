@@ -146,6 +146,17 @@ class Settings:
     def ASR_PROVIDER(self):
         return self.config.get("asr_provider", "whisper")
 
+    @property
+    def SARVAM_API_KEY(self):
+        return self._get_env_variable(
+            "SARVAM_API_KEY",
+            "To use Sarvam AI translation you need a 'SARVAM_API_KEY' in your .env file",
+        )
+
+    @property
+    def GENESIS_KB_REGISTRY_PATH(self):
+        return os.getenv("GENESIS_KB_REGISTRY_PATH", "genesis_kb_registry.json")
+
 
 # Initialize the Settings class and expose an instance
 settings = Settings()

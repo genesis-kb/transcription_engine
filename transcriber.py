@@ -1,4 +1,5 @@
 import logging
+import os
 import traceback
 
 import click
@@ -11,6 +12,7 @@ from app.data_writer import DataWriter
 from app.logging import configure_logger, get_logger
 from app.transcription import Transcription
 from app.services.factory import get_available_providers
+from app.services.translation import TranslationPipeline
 
 logger = get_logger()
 
@@ -94,10 +96,10 @@ whisper = click.option(
 asr_provider_option = click.option(
     "-p",
     "--asr-provider",
-    type=click.Choice(get_available_providers(), case_sensitive=False),
+    type=str,
     default=settings.ASR_PROVIDER,
     show_default=True,
-    help="Select which ASR provider to use for the transcription.",
+    help=f"Select which ASR provider to use for the transcription (e.g. {', '.join(get_available_providers())})",
 )
 diarize = click.option(
     "-M",
@@ -555,6 +557,78 @@ def postprocess(
     except Exception as e:
         logger.error(e)
         traceback.print_exc()
+
+
+@cli.command()
+@click.argument("input_file", type=click.Path(exists=True))
+@click.option("-o", "--output", type=click.Path(), help="Specific path to output markdown file")
+@click.option("-d", "--output-dir", type=click.Path(), default="output", help="Directory to store translation outputs (default: output/)")
+@click.option("-r", "--registry", default=settings.GENESIS_KB_REGISTRY_PATH, help="Path to genesis_kb_registry.json")
+@click.option("-l", "--lang", default="hi-IN", help="Target language code (default: hi-IN)")
+@click.option("--log-dir", type=click.Path(), default="logs", help="Directory to store log files (default: logs/)")
+@click.option("--debug", is_flag=True, help="Save intermediate steps for debugging")
+def translate(input_file, output, output_dir, registry, lang, log_dir, debug):
+    """Translate text files using Sarvam AI and Genesis KB."""
+    # Ensure directories exist
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # Configure logger to write to log file instead of terminal
+    logger = get_logger()
+    logger.handlers = []  # Clear default console logger handlers
+    
+    log_file_path = os.path.join(log_dir, "server_dev.log")
+    filehandler = logging.FileHandler(log_file_path, encoding='utf-8')
+    filehandler.setLevel(logging.INFO)
+    file_log_fmt = "%(asctime)s [%(levelname)s] %(message)s"
+    filehandler.setFormatter(logging.Formatter(file_log_fmt))
+    logger.addHandler(filehandler)
+    logger.setLevel(logging.INFO)
+    
+    if not output:
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.basename(input_file)
+        base, _ = os.path.splitext(filename)
+        output = os.path.join(output_dir, f"{base}_{lang}.md")
+    else:
+        # If specific output file is provided, ensure its parent directory exists
+        parent_dir = os.path.dirname(output)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+        
+    try:
+        with open(input_file, 'r', encoding='utf-8') as f:
+            text = f.read()
+    except Exception as e:
+        logger.error(f"Failed to read input file: {e}")
+        return
+        
+    try:
+        pipeline = TranslationPipeline(
+            registry_path=registry,
+            sarvam_api_key=settings.SARVAM_API_KEY,
+            target_lang=lang
+        )
+        
+        result = pipeline.translate_text(text)
+        
+        with open(output, 'w', encoding='utf-8') as f:
+            f.write(result.translated_text)
+        logger.info(f"Translated text saved to {output}")
+        
+        if debug:
+            base, _ = os.path.splitext(output)
+            debug_masked_file = f"{base}_debug_masked.txt"
+            with open(debug_masked_file, 'w', encoding='utf-8') as f:
+                f.write(result.masked_text)
+                
+            debug_raw_translated_file = f"{base}_debug_raw_translated.txt"
+            with open(debug_raw_translated_file, 'w', encoding='utf-8') as f:
+                f.write(result.raw_translated_text)
+                
+            logger.info(f"Debug files saved: {debug_masked_file}, {debug_raw_translated_file}")
+            
+    except Exception as e:
+        logger.error(f"Translation operation failed: {e}")
 
 
 cli.add_command(commands.media)

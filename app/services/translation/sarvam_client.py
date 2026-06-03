@@ -2,18 +2,26 @@ import time
 import requests
 from typing import Optional
 from app.logging import get_logger
+from .base_translator import BaseTranslator, TranslatorExhausted, TranslatorError
 
 logger = get_logger()
 
-class SarvamTranslator:
+class SarvamTranslator(BaseTranslator):
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.base_url = "https://api.sarvam.ai/translate"
         
-    def translate(self, text: str, source_lang: str = "en-IN", target_lang: str = "hi-IN", max_retries: int = 4) -> str:
-        if not self.api_key or self.api_key == "your_sarvam_api_key_here":
-            logger.warning("SARVAM_API_KEY is not configured or is a placeholder. Returning original text.")
-            return text
+    @property
+    def name(self) -> str:
+        return "Sarvam AI"
+
+    def is_available(self) -> bool:
+        return bool(self.api_key and self.api_key != "your_sarvam_api_key_here")
+
+    def translate(self, text: str, target_lang: str = "hi-IN", source_lang: str = "en-IN", max_retries: int = 4) -> str:
+        if not self.is_available():
+            logger.warning("SARVAM_API_KEY is not configured or is a placeholder.")
+            raise TranslatorError("Sarvam AI not configured")
 
         headers = {
             "api-subscription-key": self.api_key,
@@ -50,11 +58,11 @@ class SarvamTranslator:
                     time.sleep(wait)
                 else:
                     logger.error(f"Sarvam API error {response.status_code}: {response.text}")
-                    return text
+                    raise TranslatorError(f"Sarvam API error {response.status_code}: {response.text}")
             except Exception as e:
                 logger.error(f"Sarvam API exception: {e}")
                 if attempt == max_retries - 1:
-                    return text
+                    raise TranslatorExhausted(f"Sarvam max retries exhausted: {e}")
                 time.sleep(2 ** attempt * 5)
                 
-        return text
+        raise TranslatorExhausted("Sarvam max retries exhausted due to rate limits")

@@ -10,6 +10,7 @@ from routes.curator import router as curator_router
 from routes.ingestion import router as ingestion_router
 from routes.media import router as media_router
 from routes.transcription import router as transcription_router
+from routes.translation import router as translation_router
 
 # Ensure our app logger is configured to output to stdout
 configure_logger(log_level=logging.INFO)
@@ -51,3 +52,4 @@ app.include_router(transcription_router, prefix="/transcription")
 app.include_router(curator_router, prefix="/curator")
 app.include_router(media_router, prefix="/media")
 app.include_router(ingestion_router, prefix="/ingestion")
+app.include_router(translation_router, prefix="/translation")

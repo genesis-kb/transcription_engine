@@ -1,9 +1,9 @@
 import re
 from typing import Dict
-from .sarvam_client import SarvamTranslator
+from .base_translator import BaseTranslator
 
 class TokenRestorer:
-    def __init__(self, translator: SarvamTranslator):
+    def __init__(self, translator: BaseTranslator):
         self.translator = translator
         self.seen_soft_words = {}
 

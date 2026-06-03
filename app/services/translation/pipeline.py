@@ -5,6 +5,8 @@ from typing import Dict
 from .masker import ProtectedWordMasker
 from .chunker import FixedBlockChunker
 from .sarvam_client import SarvamTranslator
+from .gemma_client import GemmaTranslator
+from .fallback_translator import FallbackTranslator
 from .restorer import TokenRestorer
 from app.logging import get_logger
 
@@ -19,11 +21,15 @@ class TranslationResult:
     raw_translated_text: str
 
 class TranslationPipeline:
-    def __init__(self, registry_path: str, sarvam_api_key: str, target_lang: str = "hi-IN"):
+    def __init__(self, registry_path: str, sarvam_api_key: str, target_lang: str = "hi-IN", gemma_model: str = "gemma3:4b"):
         self.target_lang = target_lang
         self.masker = ProtectedWordMasker(registry_path)
         self.chunker = FixedBlockChunker(max_size=1500)
-        self.translator = SarvamTranslator(sarvam_api_key)
+        
+        sarvam = SarvamTranslator(sarvam_api_key)
+        gemma = GemmaTranslator(gemma_model)
+        self.translator = FallbackTranslator(primary=sarvam, fallback=gemma)
+        
         self.restorer = TokenRestorer(self.translator)
 
     def translate_text(self, text: str) -> TranslationResult:
@@ -41,7 +47,7 @@ class TranslationPipeline:
         
         translated_chunks = []
         for i, chunk in enumerate(chunks, 1):
-            logger.info(f"Translating chunk {i}/{len(chunks)}...")
+            logger.info(f"Translating chunk {i}/{len(chunks)} with {self.translator.name}...")
             translated_chunk = self.translator.translate(chunk, target_lang=self.target_lang)
             translated_chunks.append(translated_chunk)
             

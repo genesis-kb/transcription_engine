@@ -88,3 +88,18 @@ class APIClient:
     @api_error_handler
     def get_queue(self):
         return requests.get(f"{self.base_url}/transcription/queue/")
+
+    @api_error_handler
+    def add_translation_to_queue(self, data, source):
+        with open(source, "rb") as f:
+            files = {"source_file": (source, f, "text/plain")}
+            return requests.post(
+                f"{self.base_url}/translation/add_to_queue/",
+                data=data,
+                files=files,
+            )
+
+    @api_error_handler
+    def start_translation(self):
+        return requests.post(f"{self.base_url}/translation/start/")
+

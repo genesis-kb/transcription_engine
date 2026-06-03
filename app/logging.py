@@ -6,6 +6,7 @@ from app import __app_name__
 
 def configure_logger(log_level, working_dir=None):
     logger = get_logger()
+    logger.handlers.clear()
     sh = logging.StreamHandler()
     sh_log_fmt = "%(asctime)s [%(levelname)s] %(message)s"
     sh.setLevel(log_level)

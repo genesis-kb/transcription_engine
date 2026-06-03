@@ -157,6 +157,10 @@ class Settings:
     def GENESIS_KB_REGISTRY_PATH(self):
         return os.getenv("GENESIS_KB_REGISTRY_PATH", "genesis_kb_registry.json")
 
+    @property
+    def GEMMA_MODEL(self):
+        return os.getenv("GEMMA_MODEL", "gemma3:4b")
+
 
 # Initialize the Settings class and expose an instance
 settings = Settings()

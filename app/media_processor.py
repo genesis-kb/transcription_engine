@@ -6,8 +6,18 @@ import requests
 import soundfile as sf
 import yt_dlp
 
-from app import logging, utils
+from app import utils
 from app.config import settings
+from app.exceptions import (
+    AudioConversionError,
+    AudioSplitError,
+    FFmpegInitializationError,
+    MediaDownloadError,
+    MediaURLExtractionError,
+)
+from app.logging import get_loggers
+
+logger = get_loggers(__name__)
 
 
 def _yt_opts(**extra):
@@ -17,9 +27,6 @@ def _yt_opts(**extra):
     opts.setdefault("js_runtimes", {"node": {}})
     opts.setdefault("remote_components", {"ejs:github"})
     return opts
-
-
-logger = logging.get_logger()
 
 
 class MediaProcessor:
@@ -49,7 +56,7 @@ class MediaProcessor:
                 )
             except Exception as e:
                 logger.error(f"Error initializing FFMPEG: {e}")
-                raise Exception("Error initializing FFMPEG")
+                raise FFmpegInitializationError(f"Error initializing FFMPEG: {e}") from e
 
     def split_audio(self, audio_path, output_dir=None, overlap=0):
         # Set default output directory if not provided
@@ -57,38 +64,42 @@ class MediaProcessor:
             output_dir = os.path.splitext(audio_path)[0] + "_chunks"
 
         # Load the audio file
-        audio, sr = librosa.load(audio_path, sr=None)
-        duration = librosa.get_duration(y=audio, sr=sr)
+        try:
+            audio, sr = librosa.load(audio_path, sr=None)
+            duration = librosa.get_duration(y=audio, sr=sr)
 
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
 
-        # Array to store paths of chunks
-        chunk_paths = []
+            # Array to store paths of chunks
+            chunk_paths = []
 
-        # Split the audio into chunks
-        chunk_start = 0
-        chunk_counter = 1
+            # Split the audio into chunks
+            chunk_start = 0
+            chunk_counter = 1
 
-        while chunk_start < duration:
-            chunk_end = min(chunk_start + self.chunk_length, duration)
-            chunk_audio = audio[int(chunk_start * sr) : int(chunk_end * sr)]
-            chunk_path = os.path.join(output_dir, f"chunk_{chunk_counter}.mp3")
-            sf.write(chunk_path, chunk_audio, sr)
-            logger.debug(
-                f"Saved chunk {chunk_counter} to {chunk_path} (start={chunk_start:.2f}s, end={chunk_end:.2f}s, duration={chunk_end - chunk_start:.2f}s)"
-            )
-            chunk_paths.append(chunk_path)
-            chunk_counter += 1
+            while chunk_start < duration:
+                chunk_end = min(chunk_start + self.chunk_length, duration)
+                chunk_audio = audio[int(chunk_start * sr) : int(chunk_end * sr)]
+                chunk_path = os.path.join(output_dir, f"chunk_{chunk_counter}.mp3")
+                sf.write(chunk_path, chunk_audio, sr)
+                logger.debug(
+                    f"Saved chunk {chunk_counter} to {chunk_path} (start={chunk_start:.2f}s, end={chunk_end:.2f}s, duration={chunk_end - chunk_start:.2f}s)"
+                )
+                chunk_paths.append(chunk_path)
+                chunk_counter += 1
 
-            if chunk_end == duration:
-                break
+                if chunk_end == duration:
+                    break
 
-            chunk_start = (
-                chunk_end - overlap
-            )  # Move start point back by overlap duration
+                chunk_start = (
+                    chunk_end - overlap
+                )  # Move start point back by overlap duration
 
-        return chunk_paths
+            return chunk_paths
+        except Exception as e:
+            logger.error(f"Error splitting audio: {e}")
+            raise AudioSplitError(f"Error splitting audio: {e}") from e
 
     def convert_to_mp3(self, input_path, output_path=None):
         if output_path is None:
@@ -109,7 +120,7 @@ class MediaProcessor:
             return output_path
         except ffmpeg.Error as e:
             logger.error(f"Error converting {input_path} to mp3: {e}")
-            raise Exception(f"Error converting {input_path} to mp3: {e}")
+            raise AudioConversionError(f"Error converting {input_path} to mp3: {e}") from e
 
     def get_yt_dlp_url(self, youtube_url):
         """
@@ -125,6 +136,7 @@ class MediaProcessor:
                     return video_url
         except Exception as e:
             logger.error(f"Error extracting video URL with yt_dlp: {e}")
+            raise MediaURLExtractionError(f"Error extracting video URL with yt_dlp: {e}") from e
         return None
 
     def get_invidious_url(self, youtube_url):
@@ -179,7 +191,7 @@ class MediaProcessor:
                 return ydl.extract_info(youtube_url, download=False)
         except Exception as e:
             logger.error(f"Error extracting video info: {e}")
-            raise
+            raise MediaURLExtractionError(f"Error extracting video info: {e}") from e
 
     def download_youtube_video(
         self,

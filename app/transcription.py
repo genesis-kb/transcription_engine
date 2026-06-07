@@ -12,7 +12,7 @@ from app import __version__, application, utils
 from app.config import settings
 from app.data_fetcher import DataFetcher
 from app.data_writer import DataWriter
-from app.exceptions import DuplicateSourceError
+from app.exceptions import DuplicateSourceError, PipelineConfigError, InvalidSourceError
 from app.exporters import ExporterFactory, TranscriptExporter
 from app.github_api_handler import GitHubAPIHandler
 from app.logging import get_logger
@@ -67,9 +67,9 @@ class Transcription:
             settings.config.get("pipeline_retry_delay_seconds", 10)
         )
         if self.max_retries <= 0:
-            raise ValueError("pipeline_max_retries must be an integer > 0")
+            raise PipelineConfigError("pipeline_max_retries must be an integer > 0")
         if self.retry_delay < 0:
-            raise ValueError("pipeline_retry_delay_seconds must be an integer >= 0")
+            raise PipelineConfigError("pipeline_retry_delay_seconds must be an integer >= 0")
         self._correct_enabled = correct
         self._summarize_enabled = summarize
 
@@ -185,7 +185,7 @@ class Transcription:
     def __configure_review_flag(self, needs_review):
         # sanity check
         if needs_review and not self.markdown:
-            raise Exception(
+            raise PipelineConfigError(
                 "The `--needs-review` flag is only applicable when creating a markdown"
             )
 
@@ -222,7 +222,7 @@ class Transcription:
         if username:
             return username
         else:
-            raise Exception(
+            raise PipelineConfigError(
                 "You need to provide a username for transcription attribution"
             )
 
@@ -253,11 +253,11 @@ class Transcription:
                         # Single video URL
                         return Video(source=source)
                     else:
-                        raise Exception(source.source_file)
+                        raise InvalidSourceError(f"{source.source_file}: No title or entries found in yt-dlp info")
 
             except Exception as e:
                 # Invalid URL or video not found
-                raise Exception(f"Invalid source: {e}")
+                raise InvalidSourceError(f"{source.source_file}: yt-dlp extraction failed: {e}") from e
 
         try:
             if source.source_file.lower().endswith(
@@ -281,10 +281,12 @@ class Transcription:
                 return Video(source=source)
             youtube_source = check_if_youtube(source)
             if youtube_source == "unknown":
-                raise Exception(f"Invalid source: {source}")
+                raise InvalidSourceError(f"{source.source_file}: Unknown source type")
             return youtube_source
         except Exception as e:
-            raise Exception(f"Error from assigning source: {e}")
+            if isinstance(e, InvalidSourceError):
+                raise
+            raise InvalidSourceError(f"{source.source_file}: {e}") from e
 
     def _new_transcript_from_source(self, source: Source):
         """Helper method to initialize a new Transcript from source"""
@@ -461,7 +463,7 @@ class Transcription:
                     f"Source already exists ({self.data_fetcher.base_url}): {source.title}"
                 )
         else:
-            raise Exception(f"Invalid source: {source_file}")
+            raise InvalidSourceError(f"{source_file}: Invalid source type")
         if source.type in ["playlist", "rss"]:
             self.logger.info(
                 f"{source.title}: sources added for transcription: {len(transcription_sources['added'])} (Ignored: {len(transcription_sources['exist'])} sources)"

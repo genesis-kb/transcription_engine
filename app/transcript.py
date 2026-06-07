@@ -10,6 +10,7 @@ import yt_dlp
 from clint.textui import progress
 
 from app import logging, utils
+from app.exceptions import InvalidSourceError
 from app.config import settings
 from app.media_processor import MediaProcessor
 
@@ -301,6 +302,15 @@ class Audio(Source):
 
         def download_audio():
             """Helper method to download an audio file and return its absolute path"""
+            for speaker in self.speakers:
+                if not isinstance(speaker, str):
+                    raise InvalidSourceError(f"Invalid speaker: {speaker}")
+
+            if not self.type:
+                raise InvalidSourceError(f"Invalid source type for: {self.source_file}")
+
+            if not self.loc:
+                raise InvalidSourceError(f"Invalid loc for: {self.source_file}")
             # sanity checks
             if self.local:
                 raise Exception(f"{self.source_file} is a local file")

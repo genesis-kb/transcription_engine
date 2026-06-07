@@ -4,6 +4,8 @@ import os
 
 from dotenv import load_dotenv
 
+from app.exceptions import MissingEnvironmentVariableError
+
 
 def read_config(profile):
     config = configparser.ConfigParser()
@@ -67,7 +69,7 @@ class Settings:
                 custom_message
                 or f"{var_name} is not set in the environment or .env file. Please set it and restart the server."
             )
-            raise Exception(error_message)
+            raise MissingEnvironmentVariableError(var_name, custom_message)
         return value
 
     @property

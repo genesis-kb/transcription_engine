@@ -16,7 +16,7 @@ from fastapi import (
 from app.logging import get_logger
 from app.services.database_service import get_database_service
 from app.transcription import Transcription
-
+from app.config import settings
 
 logger = get_logger()
 router = APIRouter(tags=["Transcription"])
@@ -29,6 +29,17 @@ def get_transcription_instance(**kwargs) -> Transcription:
     if transcription_instance is None:
         transcription_instance = Transcription(**kwargs)
         logger.debug(transcription_instance)
+    else:
+        # Runtime check to prevent silent ignores of mismatched asr_provider
+        if "asr_provider" in kwargs:
+            requested_provider = kwargs.get("asr_provider")
+            effective_requested_provider = requested_provider or settings.ASR_PROVIDER
+            if getattr(transcription_instance, "asr_provider_name", None) != effective_requested_provider:
+                raise ValueError(
+                    f"A transcription instance is already running with provider "
+                    f"'{transcription_instance.asr_provider_name}'. Cannot queue a task "
+                    f"with a different provider ('{effective_requested_provider}')."
+                )
     return transcription_instance
 
 
@@ -98,8 +109,7 @@ async def add_to_queue(
     speakers: list[str] = Form([]),
     category: list[str] = Form([]),
     github: bool = Form(False),
-    deepgram: bool = Form(False),
-    smallestai: bool = Form(False),
+    asr_provider: Optional[str] = Form(None),
     summarize: bool = Form(False),
     diarize: bool = Form(False),
     upload: bool = Form(False),
@@ -125,8 +135,7 @@ async def add_to_queue(
             model=model,
             github=github,
             summarize=summarize,
-            deepgram=deepgram,
-            smallestai=smallestai,
+            asr_provider=asr_provider,
             diarize=diarize,
             upload=upload,
             model_output_dir=model_output_dir,
@@ -165,6 +174,9 @@ async def add_to_queue(
             "status": "queued",
             "message": "Transcription source has been added to the queue.",
         }
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(e)
         traceback.print_exc()
@@ -250,7 +262,7 @@ async def start(background_tasks: BackgroundTasks):
 
     return {
         "status": "started",
-        "message": "Transcription process has started.",
+        "message": f"Transcription process has started using {transcription.service}.",
     }
 
 

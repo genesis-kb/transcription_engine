@@ -142,6 +142,10 @@ class Settings:
     def DATABASE_URL(self):
         return os.getenv("DATABASE_URL")
 
+    @property
+    def ASR_PROVIDER(self):
+        return self.config.get("asr_provider", "whisper")
+
 
 # Initialize the Settings class and expose an instance
 settings = Settings()

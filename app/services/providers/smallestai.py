@@ -11,13 +11,16 @@ from app.logging import get_logger
 from app.media_processor import MediaProcessor
 from app.transcript import Transcript
 
+from app.services.providers.base import BaseTranscriptionService
 
 logger = get_logger()
 
 API_URL = "https://waves-api.smallest.ai/api/v1/pulse/get_text"
 
 
-class SmallestAI:
+class SmallestAIService(BaseTranscriptionService):
+    PROVIDER_NAME = "smallestai"
+
     def __init__(self, diarize, upload, data_writer: DataWriter):
         self.diarize = diarize
         self.upload = upload
@@ -32,6 +35,17 @@ class SmallestAI:
         )
         self.max_audio_length = 3600.0  # 60 minutes
         self.processor = MediaProcessor(chunk_length=1200.0)
+
+    def __str__(self):
+        return f"SmallestAI(diarize={self.diarize}, emotion_detection={self.emotion_detection})"
+
+    @classmethod
+    def from_config(cls, config: dict, metadata_writer: DataWriter) -> "SmallestAIService":
+        return cls(
+            diarize=config.get("diarize", False),
+            upload=config.get("upload", False),
+            data_writer=metadata_writer,
+        )
 
     def audio_to_text(self, audio_file, chunk=None):
         """Send audio to SmallestAI Pulse STT API.

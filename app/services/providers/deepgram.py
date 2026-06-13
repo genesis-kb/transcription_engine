@@ -21,11 +21,15 @@ from app.types import (
     SpeakerSegmentWithSentences,
 )
 
+from app.services.providers.base import BaseTranscriptionService
+
 
 logger = get_logger()
 
 
-class Deepgram:
+class DeepgramService(BaseTranscriptionService):
+    PROVIDER_NAME = "deepgram"
+
     def __init__(self, summarize, diarize, upload, data_writer: DataWriter):
         self.summarize = summarize
         self.diarize = diarize
@@ -39,6 +43,18 @@ class Deepgram:
         self.max_audio_length = 3600.0  # 60 minutes in seconds
         self.processor = MediaProcessor(chunk_length=1200.0)
         self.api_key = settings.DEEPGRAM_API_KEY
+
+    def __str__(self):
+        return f"Deepgram(summarize={self.summarize}, diarize={self.diarize})"
+
+    @classmethod
+    def from_config(cls, config: dict, metadata_writer: DataWriter) -> "DeepgramService":
+        return cls(
+            summarize=config.get("summarize", False),
+            diarize=config.get("diarize", False),
+            upload=config.get("upload", False),
+            data_writer=metadata_writer,
+        )
 
     def audio_to_text(self, audio_file, chunk=None):
         language = settings.config.get("language", "en")

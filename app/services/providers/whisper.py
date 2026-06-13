@@ -7,19 +7,36 @@ from app.logging import get_logger
 from app.transcript import Transcript
 
 
+from app.services.providers.base import BaseTranscriptionService
+
+
 logger = get_logger()
 
 
-class Whisper:
+class WhisperService(BaseTranscriptionService):
+    PROVIDER_NAME = "whisper"
+
     def __init__(self, model, upload, data_writer: DataWriter):
         self.model = model
         self.upload = upload
         self.data_writer = data_writer
         self._whisper = None
 
+    def __str__(self):
+        return f"Whisper(model={self.model})"
+
+    @classmethod
+    def from_config(cls, config: dict, metadata_writer: DataWriter) -> "WhisperService":
+        return cls(
+            model=config.get("model", "tiny.en"),
+            upload=config.get("upload", False),
+            data_writer=metadata_writer,
+        )
+
     def _load_whisper(self):
         if self._whisper is None:
             try:
+                # pyrefly: ignore [missing-import]
                 import whisper
 
                 self._whisper = whisper

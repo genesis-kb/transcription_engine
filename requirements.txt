@@ -27,3 +27,7 @@ psycopg2-binary>=2.9.0
 google-genai>=0.8.0
 google-generativeai>=0.3.2
 google-api-python-client>=2.100.0
+pydub>=0.25
+audioop-lts>=0.2; python_version >= '3.13'
+num2words>=0.5.13
+nltk>=3.8.1

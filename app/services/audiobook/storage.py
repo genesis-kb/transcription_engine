@@ -2,11 +2,12 @@ import os
 import mimetypes
 import requests
 from pathlib import Path
+from typing import Optional
 from app.logging import get_logger
 
 logger = get_logger()
 
-def upload_to_supabase(file_path: Path, bucket_name: str, destination_path: str) -> str:
+def upload_to_supabase(file_path: Path, bucket_name: str, destination_path: str) -> Optional[str]:
     """Uploads a file to Supabase storage using the REST API and returns the public URL."""
     supabase_url = os.environ.get("SUPABASE_URL")
     supabase_key = os.environ.get("SUPABASE_KEY")
@@ -26,12 +27,12 @@ def upload_to_supabase(file_path: Path, bucket_name: str, destination_path: str)
     
     try:
         with open(file_path, "rb") as f:
-            response = requests.post(url, headers=headers, data=f)
+            response = requests.post(url, headers=headers, data=f, timeout=30)
             
             # If file exists, try PUT to overwrite
             if response.status_code == 400 and 'Duplicate' in response.text:
                 f.seek(0)
-                response = requests.put(url, headers=headers, data=f)
+                response = requests.put(url, headers=headers, data=f, timeout=30)
                 
             response.raise_for_status()
             

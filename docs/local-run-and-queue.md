@@ -6,7 +6,7 @@ A step-by-step guide to run the project locally, initialize the database, and qu
 
 ## Prerequisites
 
-- Python 3.9+
+- Python 3.10+
 - A running PostgreSQL database (e.g. [Supabase](https://supabase.com))
 - A Google / YouTube API key
 

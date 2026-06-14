@@ -186,7 +186,8 @@ class AudioPipeline:
 
         # Step 5: Stitch into final file
         logger.info("[pipeline] Stitching final audio")
-        final_path = output_dir / f"{title}.{fmt}"
+        safe_title = "".join(c if c.isalnum() or c in " -_" else "" for c in title).strip() or "episode"
+        final_path = output_dir / f"{safe_title}.{fmt}"
         export_book(chapters_audio, cfg, final_path)
 
         # Compute duration

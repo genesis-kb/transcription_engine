@@ -299,11 +299,10 @@ class AudiobookCurator:
             playlist_title = playlist["title"] if playlist else "Unknown"
             
             # Use same path format as manual seeds: audiobooks/Playlist_Title/Episode_Title.mp3
-            safe_pl_title = "".join(c if c.isalnum() or c in " _-" else "" for c in playlist_title).replace(" ", "%20")
+            safe_pl_title = "".join(c if c.isalnum() or c in " _-" else "" for c in playlist_title).strip()
             safe_ep_title = "".join(c if c.isalnum() or c in " _-" else "" for c in episode["title"]).replace(" ", "_")
             ext = result.audio_path.suffix
-            # the %20 encoding might be handled by requests, so let's just use spaces for the actual object key
-            destination_path = f"{playlist_title}/{safe_ep_title}{ext}"
+            destination_path = f"{safe_pl_title}/{safe_ep_title}{ext}"
             
             public_url = upload_to_supabase(result.audio_path, "audiobooks", destination_path)
             if public_url:

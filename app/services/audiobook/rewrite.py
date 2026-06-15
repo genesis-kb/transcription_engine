@@ -34,7 +34,27 @@ def rewrite(text: str, cfg: dict[str, Any]) -> dict[str, Any]:
             {"role": "user", "content": USER_TMPL.format(source=text)},
         ],
     )
-    manifest = json.loads(resp.choices[0].message.content)
+    try:
+        content = resp.choices[0].message.content
+        if not content:
+            manifest = {}
+        else:
+            manifest = json.loads(content)
+            if not isinstance(manifest, dict):
+                manifest = {}
+    except (IndexError, AttributeError, ValueError, json.JSONDecodeError):
+        manifest = {}
+
     manifest.setdefault("title", "Untitled Audiobook")
-    manifest.setdefault("chapters", [])
+    
+    chapters = manifest.get("chapters", [])
+    if not isinstance(chapters, list):
+        chapters = []
+        
+    valid_chapters = []
+    for ch in chapters:
+        if isinstance(ch, dict) and "title" in ch and "text" in ch:
+            valid_chapters.append(ch)
+            
+    manifest["chapters"] = valid_chapters
     return manifest

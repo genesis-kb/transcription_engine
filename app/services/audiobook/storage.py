@@ -1,6 +1,7 @@
 import os
 import mimetypes
 import requests
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 from app.logging import get_logger
@@ -16,27 +17,23 @@ def upload_to_supabase(file_path: Path, bucket_name: str, destination_path: str)
         logger.warning("SUPABASE_URL or SUPABASE_KEY not set. Cannot upload to Supabase.")
         return None
         
-    url = f"{supabase_url.rstrip('/')}/storage/v1/object/{bucket_name}/{destination_path}"
+    safe_destination = urllib.parse.quote(destination_path)
+    url = f"{supabase_url.rstrip('/')}/storage/v1/object/{bucket_name}/{safe_destination}"
     mime_type, _ = mimetypes.guess_type(str(file_path))
     
     headers = {
         "Authorization": f"Bearer {supabase_key}",
         "apikey": supabase_key,
-        "Content-Type": mime_type or "audio/mpeg"
+        "Content-Type": mime_type or "audio/mpeg",
+        "x-upsert": "true"
     }
     
     try:
         with open(file_path, "rb") as f:
             response = requests.post(url, headers=headers, data=f, timeout=30)
-            
-            # If file exists, try PUT to overwrite
-            if response.status_code == 400 and 'Duplicate' in response.text:
-                f.seek(0)
-                response = requests.put(url, headers=headers, data=f, timeout=30)
-                
             response.raise_for_status()
             
-        public_url = f"{supabase_url.rstrip('/')}/storage/v1/object/public/{bucket_name}/{destination_path}"
+        public_url = f"{supabase_url.rstrip('/')}/storage/v1/object/public/{bucket_name}/{safe_destination}"
         logger.info(f"Successfully uploaded to Supabase: {public_url}")
         return public_url
     except Exception as e:

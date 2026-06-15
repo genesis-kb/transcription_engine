@@ -12,7 +12,9 @@ def load_audiobook_config() -> tuple[dict[str, Any], dict[str, str]]:
     lexicon_path = current_dir / "audiobook_lexicon.json"
 
     with open(config_path, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+        cfg = yaml.safe_load(f) or {}
+    if not isinstance(cfg, dict):
+        cfg = {}
 
     cfg["keys"] = {
         "openai": os.getenv("OPENAI_API_KEY", ""),
@@ -22,6 +24,8 @@ def load_audiobook_config() -> tuple[dict[str, Any], dict[str, str]]:
 
     with open(lexicon_path, "r", encoding="utf-8") as f:
         data = json.loads(f.read())
+        if not isinstance(data, dict):
+            data = {}
         lexicon = {k: v for k, v in data.items() if not k.startswith("_")}
         
     return cfg, lexicon

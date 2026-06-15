@@ -57,6 +57,16 @@ class InputFile:
         return len(self.body.split())
 
 
+def _parse_tags(raw_tags: object) -> list[str]:
+    if not raw_tags:
+        return []
+    if isinstance(raw_tags, str):
+        return [raw_tags]
+    if isinstance(raw_tags, list):
+        return [str(t) for t in raw_tags]
+    return [str(raw_tags)]
+
+
 def parse_file(filepath: Path) -> Optional[InputFile]:
     """Parse a single text file with YAML frontmatter.
 
@@ -71,6 +81,11 @@ def parse_file(filepath: Path) -> Optional[InputFile]:
     match = FRONTMATTER_RE.match(raw)
     if not match:
         # No frontmatter — treat as a plain single article
+        body = raw.strip()
+        if not body:
+            logger.warning(f"Empty body in {filepath.name}, skipping")
+            return None
+
         logger.info(
             f"No YAML frontmatter in {filepath.name}, "
             "treating as single_article"
@@ -79,7 +94,7 @@ def parse_file(filepath: Path) -> Optional[InputFile]:
             filepath=filepath,
             input_type="single_article",
             title=filepath.stem.replace("_", " ").replace("-", " ").title(),
-            body=raw.strip(),
+            body=body,
         )
 
     try:
@@ -114,7 +129,7 @@ def parse_file(filepath: Path) -> Optional[InputFile]:
             author=meta.get("author"),
             source_url=meta.get("source_url"),
             description=meta.get("description"),
-            tags=meta.get("tags", []),
+            tags=_parse_tags(meta.get("tags")),
         )
 
     # single_article (default)
@@ -126,7 +141,7 @@ def parse_file(filepath: Path) -> Optional[InputFile]:
         author=meta.get("author"),
         source_url=meta.get("source_url"),
         description=meta.get("description"),
-        tags=meta.get("tags", []),
+        tags=_parse_tags(meta.get("tags")),
     )
 
 

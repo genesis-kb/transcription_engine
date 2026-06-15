@@ -120,7 +120,7 @@ class DatabaseService:
                         is_current=True,
                         version=next_version,
                         raw_text=transcript.outputs.get("raw", ""),
-                        corrected_text=transcript.outputs.get("corrected_text", "")
+                        corrected_text=transcript.outputs.get("corrected_text") or None
                     )
                     session.add(t)
                     session.flush()

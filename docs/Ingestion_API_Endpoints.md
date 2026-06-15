@@ -2,7 +2,7 @@
 
 **Base URL**: `http://localhost:8000`
 
-All endpoints are prefixed by their respective router. The four routers and their prefixes are:
+All endpoints are prefixed by their respective router. The five routers and their prefixes are:
 
 | Router | Prefix |
 |---|---|
@@ -10,6 +10,7 @@ All endpoints are prefixed by their respective router. The four routers and thei
 | Transcription | `/transcription` |
 | Curator | `/curator` |
 | Media | `/media` |
+| Audiobooks | `/audiobooks` |
 
 ---
 
@@ -505,3 +506,40 @@ Extracts the direct streamable video URL from a YouTube link.
   { "status": "success", "video_url": "https://..." }
   ```
 - **Error Response** (`500`): Could not extract the video URL.
+
+---
+
+## 5. Audiobook Router — `/audiobooks`
+
+---
+
+#### `GET /audiobooks/playlists`
+
+List all audio playlists. Returns playlists ordered by last updated (newest first). Does not include episodes.
+
+- **Query Parameters**:
+  - `status` (string): Filter by status (`draft`, `published`, `archived`)
+  - `playlist_type` (string): Filter by type (`series`, `collection`)
+  - `limit` (int): Max results (default: `50`, max: `100`)
+  - `offset` (int): Pagination offset (default: `0`)
+- **Response**: `{ "data": [ ... ], "total": 10 }`
+
+---
+
+#### `GET /audiobooks/playlists/{slug}`
+
+Get a single playlist by slug, including all ordered episodes.
+
+- **Path Parameter**: `slug` — Slug of the playlist
+- **Response**: `{ "data": { ...playlist object with episodes array... } }`
+- **Error Response** (`404`): Playlist not found.
+
+---
+
+#### `GET /audiobooks/episodes/{episode_id}`
+
+Get a single episode by UUID. Useful for deep-linking directly to a specific episode.
+
+- **Path Parameter**: `episode_id` — UUID of the episode
+- **Response**: `{ "data": { ...episode object... } }`
+- **Error Response** (`404`): Episode not found.

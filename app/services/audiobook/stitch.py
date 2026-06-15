@@ -4,31 +4,52 @@ from typing import Any
 from pydub import AudioSegment
 
 def _seg(audio: bytes, fmt: str) -> AudioSegment:
-    return AudioSegment.from_file(io.BytesIO(audio), format="mp3" if fmt == "mp3" else "wav")
+    return AudioSegment.from_file(io.BytesIO(audio), format=fmt)
 
 def build_chapter(chunks: list[bytes], cfg: dict[str, Any]) -> AudioSegment:
-    gap = AudioSegment.silent(duration=cfg["audio"]["silence_ms_between_chunks"])
+    if not chunks:
+        return AudioSegment.empty()
+    
     fmt = cfg["tts"]["format"]
-    out = AudioSegment.empty()
-    for i, c in enumerate(chunks):
-        if i: out += gap
-        out += _seg(c, fmt)
-    return out
+    first = _seg(chunks[0], fmt)
+    
+    gap = AudioSegment.silent(
+        duration=cfg["audio"]["silence_ms_between_chunks"],
+        frame_rate=first.frame_rate
+    ).set_channels(first.channels).set_sample_width(first.sample_width)
+    
+    segments = [first]
+    for c in chunks[1:]:
+        segments.append(gap)
+        segments.append(_seg(c, fmt))
+        
+    return first._spawn(b"".join(s.raw_data for s in segments))
 
 def normalize_loudness(seg: AudioSegment, target_dbfs: float) -> AudioSegment:
     if seg.dBFS == float("-inf"): return seg
-    return seg.apply_gain(target_dbfs - seg.dBFS)
+    gain = target_dbfs - seg.dBFS
+    return seg.apply_gain(min(gain, -seg.max_dBFS))
 
 def export_segment(seg: AudioSegment, path: Path, fmt: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    seg.export(path, format="mp3" if fmt == "mp3" else "wav")
+    seg.export(path, format=fmt)
     return path
 
 def export_book(chapters: list[AudioSegment], cfg: dict[str, Any], out_path: Path) -> Path:
-    gap = AudioSegment.silent(duration=cfg["audio"]["silence_ms_between_chapters"])
-    book = AudioSegment.empty()
-    for i, ch in enumerate(chapters):
-        if i: book += gap
-        book += ch
+    if not chapters:
+        return export_segment(AudioSegment.empty(), out_path, cfg["tts"]["format"])
+
+    first = chapters[0]
+    gap = AudioSegment.silent(
+        duration=cfg["audio"]["silence_ms_between_chapters"],
+        frame_rate=first.frame_rate
+    ).set_channels(first.channels).set_sample_width(first.sample_width)
+    
+    segments = [first]
+    for ch in chapters[1:]:
+        segments.append(gap)
+        segments.append(ch)
+        
+    book = first._spawn(b"".join(s.raw_data for s in segments))
     book = normalize_loudness(book, cfg["audio"]["target_dbfs"])
     return export_segment(book, out_path, cfg["tts"]["format"])

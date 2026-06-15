@@ -79,6 +79,20 @@ class PlaylistService:
             )
             return pl.to_dict(include_episodes=True) if pl else None
 
+    def count_playlists(
+        self,
+        status: Optional[str] = None,
+        playlist_type: Optional[str] = None,
+    ) -> int:
+        """Count total playlists matching the filters."""
+        with get_session() as session:
+            query = session.query(AudioPlaylist)
+            if status:
+                query = query.filter_by(status=status)
+            if playlist_type:
+                query = query.filter_by(playlist_type=playlist_type)
+            return query.count()
+
     def list_playlists(
         self,
         status: Optional[str] = None,

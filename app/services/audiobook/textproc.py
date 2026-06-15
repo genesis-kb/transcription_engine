@@ -114,7 +114,10 @@ SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
 def chunk_split(text: str, max_chars: int) -> list[str]:
     if nltk:
-        sentences = nltk.tokenize.sent_tokenize(text.strip())
+        try:
+            sentences = nltk.tokenize.sent_tokenize(text.strip())
+        except LookupError:
+            sentences = SENTENCE_END.split(text.strip())
     else:
         sentences = SENTENCE_END.split(text.strip())
         

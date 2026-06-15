@@ -547,7 +547,7 @@ class AudioPlaylist(Base):
     total_duration_seconds = Column(Integer, server_default=text("0"))
     episode_count = Column(Integer, server_default=text("0"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
-    updated_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=text("now()"))
 
     episodes = relationship(
         "AudioEpisode",

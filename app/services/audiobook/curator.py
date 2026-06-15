@@ -199,10 +199,10 @@ class AudiobookCurator:
             )
 
             # Series episodes are already logically divided — no LLM
-            self._generate_and_update(
+            if self._generate_and_update(
                 episode, inp.body, skip_llm=True
-            )
-            generated += 1
+            ):
+                generated += 1
 
         self._playlists.refresh_playlist_stats(playlist["id"])
         return {"episodes": generated}
@@ -248,9 +248,12 @@ class AudiobookCurator:
             self._skip_llm
             or inp.word_count <= self._chapterize_threshold
         )
-        self._generate_and_update(episode, inp.body, should_skip_llm)
+        if self._generate_and_update(episode, inp.body, should_skip_llm):
+            episodes_count = 1
+        else:
+            episodes_count = 0
         self._playlists.refresh_playlist_stats(playlist["id"])
-        return {"episodes": 1}
+        return {"episodes": episodes_count}
 
     # ------------------------------------------------------------------
     # Internal: Audio Generation + DB Update
@@ -261,11 +264,13 @@ class AudiobookCurator:
         episode: dict,
         text: str,
         skip_llm: bool,
-    ) -> None:
+    ) -> bool:
         """Run the audio pipeline and update the episode record.
         
         Skips episodes that already completed (safe for re-runs).
         Re-attempts episodes that are in 'pending' or 'failed' status.
+        
+        Returns True if newly generated, False if skipped.
         """
         episode_id = episode["id"]
 
@@ -274,7 +279,7 @@ class AudiobookCurator:
             logger.info(
                 f"  ↩ Skipping '{episode['title']}' (already completed)"
             )
-            return
+            return False
 
         # Mark as generating
         self._playlists.update_episode(
@@ -321,6 +326,7 @@ class AudiobookCurator:
                 f"  ✓ Episode '{episode['title']}' — "
                 f"{result.duration_seconds}s"
             )
+            return True
         except Exception as e:
             self._playlists.update_episode(
                 episode_id, {"status": "failed"}

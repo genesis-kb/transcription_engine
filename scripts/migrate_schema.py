@@ -118,7 +118,8 @@ def run_migration(dry_run=False):
                     is_active,
                     NULL,
                     created_at
-                FROM deduped_source_rows;
+                FROM deduped_source_rows
+                ON CONFLICT DO NOTHING;
             """
             if not dry_run:
                 res = conn.execute(text(migrate_sources_sql))
@@ -172,15 +173,18 @@ def run_migration(dry_run=False):
                 logger.info(f"Processing {total_transcripts} old transcripts in batches...")
                 
                 def iter_transcripts():
-                    offset = 0
+                    last_id = None
                     batch_size = 100
                     while True:
-                        batch = conn.execute(text("SELECT * FROM old_transcripts ORDER BY id LIMIT :limit OFFSET :offset"), {"limit": batch_size, "offset": offset}).fetchall()
+                        if last_id is None:
+                            batch = conn.execute(text("SELECT * FROM old_transcripts ORDER BY id LIMIT :limit"), {"limit": batch_size}).fetchall()
+                        else:
+                            batch = conn.execute(text("SELECT * FROM old_transcripts WHERE id > :last_id ORDER BY id LIMIT :limit"), {"limit": batch_size, "last_id": last_id}).fetchall()
                         if not batch:
                             break
                         for row in batch:
                             yield row
-                        offset += batch_size
+                        last_id = batch[-1].id
 
                 migrated_transcripts_count = 0
                 for t in iter_transcripts():

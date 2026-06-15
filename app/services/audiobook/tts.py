@@ -9,6 +9,9 @@ class TTSProvider(ABC):
     def __init__(self, api_key: str, voice: str, fmt: str = "mp3",
                  speed: float = 1.0, model: str | None = None,
                  lexicon: dict[str, str] | None = None):
+        supported_formats = {"mp3", "wav", "linear16", "pcm"}
+        if fmt not in supported_formats:
+            raise ValueError(f"Unsupported TTS format '{fmt}'. Must be one of: {supported_formats}")
         self.api_key = api_key
         self.voice = voice
         self.fmt = fmt
@@ -75,8 +78,14 @@ def make_provider(cfg: dict[str, Any], lexicon: dict[str, str] | None = None) ->
     name = cfg["tts"]["provider"]
     if name not in _REGISTRY:
         raise ValueError(f"Unknown TTS provider '{name}'. Options: {list(_REGISTRY)}")
+    
+    api_key = cfg["keys"].get(name, "")
+    if not api_key:
+        env_var = f"{name.upper()}_API_KEY"
+        raise ValueError(f"Missing API key for TTS provider '{name}'. Please set the {env_var} environment variable.")
+        
     return _REGISTRY[name](
-        api_key=cfg["keys"].get(name, ""),
+        api_key=api_key,
         voice=cfg["tts"]["voices"][name],
         fmt=cfg["tts"]["format"],
         speed=cfg["tts"].get("speed", 1.0),

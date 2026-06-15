@@ -39,9 +39,9 @@ class GeneratedEpisode:
     chapters: list[dict]
 
 
-def _cache_key(provider: str, voice: str, fmt: str, text: str, lex_hash: str = "") -> str:
+def _cache_key(provider: str, voice: str, fmt: str, text: str, lex_hash: str = "", speed: float = 1.0, model: str = "") -> str:
     h = hashlib.sha256(
-        f"{provider}|{voice}|{fmt}|{text}|{lex_hash}".encode("utf-8")
+        f"{provider}|{voice}|{fmt}|{text}|{lex_hash}|{speed}|{model}".encode("utf-8")
     )
     return h.hexdigest()[:24]
 
@@ -53,7 +53,10 @@ def _get_or_synthesize(
     cache_dir.mkdir(parents=True, exist_ok=True)
     lex_str = str(sorted(provider.lexicon.items())) if getattr(provider, "lexicon", None) else ""
     lex_hash = hashlib.md5(lex_str.encode("utf-8")).hexdigest()[:8] if lex_str else ""
-    key = _cache_key(provider.name, provider.voice, provider.fmt, text, lex_hash)
+    key = _cache_key(
+        provider.name, provider.voice, provider.fmt, text, lex_hash,
+        getattr(provider, "speed", 1.0), getattr(provider, "model", "") or ""
+    )
     path = cache_dir / f"{key}.{provider.fmt}"
     if path.exists():
         return path.read_bytes()
@@ -74,11 +77,11 @@ class AudioPipeline:
         cfg: Optional[dict[str, Any]] = None,
         lexicon: Optional[dict[str, str]] = None,
     ):
-        if cfg and lexicon:
-            self.cfg = cfg
-            self.lexicon = lexicon
-        else:
-            self.cfg, self.lexicon = load_audiobook_config()
+        if cfg is None or lexicon is None:
+            default_cfg, default_lexicon = load_audiobook_config()
+            
+        self.cfg = cfg if cfg is not None else default_cfg
+        self.lexicon = lexicon if lexicon is not None else default_lexicon
 
     def generate_episode(
         self,
@@ -103,8 +106,9 @@ class AudioPipeline:
         Returns:
             A GeneratedEpisode with the path, duration, and chapter list.
         """
-        cfg = self.cfg
+        cfg = dict(self.cfg)
         if provider_override:
+            cfg["tts"] = dict(cfg["tts"])
             cfg["tts"]["provider"] = provider_override
 
         provider = make_provider(cfg, self.lexicon)

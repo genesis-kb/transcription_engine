@@ -44,16 +44,21 @@ async def list_playlists(
     Does NOT include episodes — use /playlists/{slug} for that.
     """
     try:
-        playlists = _service().list_playlists(
+        service = _service()
+        playlists = service.list_playlists(
             status=status,
             playlist_type=playlist_type,
             limit=limit,
             offset=offset,
         )
-        return {"data": playlists, "total": len(playlists)}
+        total = service.count_playlists(
+            status=status,
+            playlist_type=playlist_type,
+        )
+        return {"data": playlists, "total": total}
     except Exception as e:
         logger.error(f"Failed to list playlists: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -79,7 +84,7 @@ async def get_playlist(slug: str):
         raise
     except Exception as e:
         logger.error(f"Failed to get playlist '{slug}': {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -104,4 +109,4 @@ async def get_episode(episode_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to get episode '{episode_id}': {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

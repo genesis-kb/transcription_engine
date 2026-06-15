@@ -98,7 +98,7 @@ This document explains what happens inside the pipeline from the moment you run 
 - **Single article** → `_process_single_article(inp)`
   - Calls `find_or_create_playlist()` with `playlist_type="collection"`.
   - Creates one episode.
-  - Calls `_generate_and_update()` with `skip_llm` determined by whether word count exceeds the threshold (default: 5,000 words).
+  - Calls `_generate_and_update()` with `skip_llm=True` if the word count is below the threshold (default: 5,000 words), bypassing LLM chapterization for short articles.
 
 `_generate_and_update()` is the bridge between curator and pipeline:
 1. Checks episode status — skips if `completed`.
@@ -172,7 +172,7 @@ This cache means re-running the pipeline after a crash is fast — only uncached
 ### Step 4 — Supabase Upload (`storage.py`)
 
 If `SUPABASE_URL` and `SUPABASE_KEY` are set:
-- POSTs the MP3 file to `<SUPABASE_URL>/storage/v1/object/audiobooks/<Playlist Title>/<Episode Title>.mp3`.
+- POSTs the MP3 file to `<SUPABASE_URL>/storage/v1/object/audiobooks/<Safe Playlist Title>/<Safe Episode Title>.mp3` (with special characters and slashes removed to prevent path traversal).
 - If a duplicate is detected (HTTP 400), retries with PUT to overwrite.
 - Returns the public URL on success; returns `None` and logs a warning on failure.
 

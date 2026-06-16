@@ -18,12 +18,39 @@ from app.config import settings
 from app.media_processor import MediaProcessor
 
 
+from contextlib import contextmanager
+
+@contextmanager
+def _ssrf_protection():
+    """Context manager that patches socket.getaddrinfo to prevent SSRF and DNS rebinding."""
+    import socket
+    import ipaddress
+    _orig_getaddrinfo = socket.getaddrinfo
+
+    def safe_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        addr_infos = _orig_getaddrinfo(host, port, family, type, proto, flags)
+        for res in addr_infos:
+            ip_str = res[4][0]
+            try:
+                addr = ipaddress.ip_address(ip_str)
+            except ValueError:
+                continue
+            if addr.is_loopback or addr.is_private or addr.is_link_local or addr.is_multicast:
+                raise ValueError(f"SSRF Attempt: Resolved IP {addr} for '{host}' is not permitted.")
+        return addr_infos
+
+    socket.getaddrinfo = safe_getaddrinfo
+    try:
+        yield
+    finally:
+        socket.getaddrinfo = _orig_getaddrinfo
+
+
 def _validate_scrape_url(url: str) -> None:
     """Raise ValueError if *url* is unsafe to fetch from the server.
 
     Guards against SSRF by rejecting:
     - Non-HTTP(S) schemes
-    - Loopback, private, link-local, and multicast IP ranges
     """
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
@@ -31,13 +58,7 @@ def _validate_scrape_url(url: str) -> None:
     hostname = parsed.hostname
     if not hostname:
         raise ValueError("URL is missing a hostname.")
-    try:
-        # Resolve the hostname to an IP address to catch DNS-rebinding tricks.
-        addr = ipaddress.ip_address(socket.gethostbyname(hostname))
-    except (socket.gaierror, ValueError) as exc:
-        raise ValueError(f"Cannot resolve hostname '{hostname}': {exc}") from exc
-    if addr.is_loopback or addr.is_private or addr.is_link_local or addr.is_multicast:
-        raise ValueError(f"Requests to '{hostname}' ({addr}) are not permitted.")
+
 
 
 def _yt_opts(**extra):
@@ -711,13 +732,14 @@ class Scraper(Source):
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.5"
             }
-            response = requests.get(
-                self.source_file,
-                headers=headers,
-                timeout=15,
-                allow_redirects=True,
-                stream=False,
-            )
+            with _ssrf_protection():
+                response = requests.get(
+                    self.source_file,
+                    headers=headers,
+                    timeout=15,
+                    allow_redirects=True,
+                    stream=False,
+                )
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
             

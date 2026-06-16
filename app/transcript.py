@@ -1,5 +1,8 @@
+import ipaddress
 import os
+import socket
 import tempfile
+import urllib.parse
 from datetime import date, datetime
 from typing import Optional, TypedDict
 
@@ -13,6 +16,28 @@ from app import logging, utils
 from app.exceptions import InvalidSourceError
 from app.config import settings
 from app.media_processor import MediaProcessor
+
+
+def _validate_scrape_url(url: str) -> None:
+    """Raise ValueError if *url* is unsafe to fetch from the server.
+
+    Guards against SSRF by rejecting:
+    - Non-HTTP(S) schemes
+    - Loopback, private, link-local, and multicast IP ranges
+    """
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Unsupported URL scheme '{parsed.scheme}' — only http/https are allowed.")
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("URL is missing a hostname.")
+    try:
+        # Resolve the hostname to an IP address to catch DNS-rebinding tricks.
+        addr = ipaddress.ip_address(socket.gethostbyname(hostname))
+    except (socket.gaierror, ValueError) as exc:
+        raise ValueError(f"Cannot resolve hostname '{hostname}': {exc}") from exc
+    if addr.is_loopback or addr.is_private or addr.is_link_local or addr.is_multicast:
+        raise ValueError(f"Requests to '{hostname}' ({addr}) are not permitted.")
 
 
 def _yt_opts(**extra):
@@ -645,8 +670,9 @@ class RSS(Source):
                 )
                 self.entries.append(source)
             else:
+                enclosure_type = getattr(enclosure, "type", None) or (enclosure.get("type") if isinstance(enclosure, dict) else None) or "none"
                 self.logger.warning(
-                    f"Invalid source for '{entry.title}'. '{enclosure.type}' not supported for RSS feeds, source skipped."
+                    f"Invalid source for '{entry.title}'. '{enclosure_type}' not supported for RSS feeds, source skipped."
                 )
 
 class Scraper(Source):
@@ -672,24 +698,32 @@ class Scraper(Source):
         self.description = ""
         self.author = ""
         self.youtube_metadata = None
-        self.__config_source()
+        # Scraping is deferred to process() so that construction is side-effect-free
+        # and the pipeline's retry/circuit-break logic can manage network failures.
 
     def __config_source(self):
-        import requests
         from bs4 import BeautifulSoup
         try:
+            _validate_scrape_url(self.source_file)
             self.logger.info(f"Scraping text from: {self.source_file}")
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.5"
             }
-            response = requests.get(self.source_file, headers=headers, timeout=15)
+            response = requests.get(
+                self.source_file,
+                headers=headers,
+                timeout=15,
+                allow_redirects=True,
+                stream=False,
+            )
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
             
             if not self.title:
-                self.title = soup.title.string.strip() if soup.title else self.source_file
+                title_text = soup.title.get_text(strip=True) if soup.title else None
+                self.title = title_text or self.source_file
                 
             for script in soup(["script", "style", "nav", "footer", "header", "aside"]):
                 script.extract()
@@ -701,12 +735,14 @@ class Scraper(Source):
             self.logger.info(f"Successfully scraped article: {self.title}")
         except Exception as e:
             self.logger.error(f"Failed to scrape article {self.source_file}: {e}")
-            raise Exception(f"Failed to scrape article: {e}")
+            raise Exception(f"Failed to scrape article: {e}") from e
 
     def download(self, tmp_dir):
         # We don't download audio for scraped text articles
         return None
 
     def process(self, working_dir):
-        """No media to process for a text scraper"""
+        """Scrape the article text. Deferred from __init__ so construction is
+        side-effect-free and the pipeline's retry logic can handle failures."""
+        self.__config_source()
         return None

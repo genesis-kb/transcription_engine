@@ -285,7 +285,7 @@ class Transcription:
                 return Video(source=source)
                 
             # If it's a web page, not youtube, use Scraper
-            if source.source_file.startswith("http") and not ("youtube.com" in lower_url or "youtu.be" in lower_url):
+            if lower_url.startswith(("http://", "https://")) and not ("youtube.com" in lower_url or "youtu.be" in lower_url):
                 return Scraper(source=source)
 
             youtube_source = check_if_youtube(source)

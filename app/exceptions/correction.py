@@ -6,7 +6,7 @@ class CorrectionError(TranscriptionEngineError):
     pass
 
 
-class UnsupportedCorrectionProviderError(NonRetryableError):
+class UnsupportedCorrectionProviderError(CorrectionError, NonRetryableError):
     def __init__(self, provider):
         super().__init__(f"Unsupported LLM provider: {provider}")
 

@@ -255,6 +255,8 @@ class Transcription:
                     else:
                         raise InvalidSourceError(f"{source.source_file}: No title or entries found in yt-dlp info")
 
+            except InvalidSourceError:
+                raise
             except Exception as e:
                 # Invalid URL or video not found
                 raise InvalidSourceError(f"{source.source_file}: yt-dlp extraction failed: {e}") from e
@@ -712,6 +714,16 @@ class Transcription:
                 )
                 return True
             except Exception as exc:
+                from app.exceptions.base import NonRetryableError
+                if isinstance(exc, NonRetryableError):
+                    self.logger.error(
+                        f"[PIPELINE] [{transcript.title}] [{stage_name}] → failed permanently: {exc}"
+                    )
+                    self._update_stage_state(
+                        transcript, stage_name, "failed",
+                        error=str(exc), attempts=attempt,
+                    )
+                    return False
                 if attempt == self.max_retries:
                     self.logger.error(
                         f"[PIPELINE] [{transcript.title}] [{stage_name}] → failed after "

@@ -6,12 +6,12 @@ class ASRProviderError(TranscriptionEngineError):
     pass
 
 
-class UnsupportedASRProviderError(NonRetryableError):
+class UnsupportedASRProviderError(ASRProviderError):
     def __init__(self, provider):
         super().__init__(f"Unsupported ASR provider: {provider}")
 
 
-class TranscriptionOutputMissingError(NonRetryableError):
+class TranscriptionOutputMissingError(ASRProviderError):
     def __init__(self, provider):
         super().__init__(f"No '{provider}_output' found in JSON")
 

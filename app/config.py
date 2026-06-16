@@ -65,10 +65,6 @@ class Settings:
     def _get_env_variable(var_name, custom_message=None):
         value = os.getenv(var_name)
         if not value:
-            error_message = (
-                custom_message
-                or f"{var_name} is not set in the environment or .env file. Please set it and restart the server."
-            )
             raise MissingEnvironmentVariableError(var_name, custom_message)
         return value
 

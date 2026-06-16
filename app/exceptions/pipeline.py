@@ -40,12 +40,12 @@ class ExportError(TranscriptionEngineError):
     pass
 
 
-class MissingTranscriptContentError(NonRetryableError):
+class MissingTranscriptContentError(ExportError, NonRetryableError):
     def __init__(self, message="No transcript content found"):
         super().__init__(message)
 
 
-class FileWriteError(NonRetryableError):
+class FileWriteError(ExportError, NonRetryableError):
     def __init__(self, file_path, error_details):
         super().__init__(f"Error writing to file {file_path}: {error_details}")
 

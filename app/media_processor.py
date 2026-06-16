@@ -15,9 +15,9 @@ from app.exceptions import (
     MediaDownloadError,
     MediaURLExtractionError,
 )
-from app.logging import get_loggers
+from app.logging import get_logger
 
-logger = get_loggers(__name__)
+logger = get_logger()
 
 
 def _yt_opts(**extra):
@@ -120,7 +120,7 @@ class MediaProcessor:
             return output_path
         except ffmpeg.Error as e:
             logger.error(f"Error converting {input_path} to mp3: {e}")
-            raise AudioConversionError(f"Error converting {input_path} to mp3: {e}") from e
+            raise AudioConversionError(input_path, e) from e
 
     def get_yt_dlp_url(self, youtube_url):
         """
@@ -231,4 +231,4 @@ class MediaProcessor:
                 f"Error downloading youtube video ({format_selector}): {e}"
             )
             logger.error(error_message)
-            raise Exception(error_message)
+            raise MediaDownloadError(error_message) from e

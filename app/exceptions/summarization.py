@@ -6,7 +6,7 @@ class SummarizationError(TranscriptionEngineError):
     pass
 
 
-class UnsupportedSummarizationProviderError(NonRetryableError):
+class UnsupportedSummarizationProviderError(SummarizationError):
     def __init__(self, provider):
         super().__init__(f"Unsupported LLM provider: {provider}")
 

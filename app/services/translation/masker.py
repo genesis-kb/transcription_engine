@@ -12,7 +12,7 @@ class ProtectedWordMasker:
             with open(self.registry_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception as e:
-            raise RuntimeError(f"Failed to load registry from {self.registry_path}: {e}")
+            raise RuntimeError(f"Failed to load registry from {self.registry_path}: {e}") from e
 
         hard_words = data.get("HARD_PROTECTED", [])
         soft_words = data.get("SOFT_PROTECTED", [])
@@ -30,9 +30,9 @@ class ProtectedWordMasker:
             token = f"[{idx:04d}]"
             self.word_mapping[token] = {"word": word, "type": wtype}
             
-            # Escape the word for regex and use word boundaries
+            # Escape the word for regex and use lookarounds
             escaped_word = re.escape(word)
-            pattern = re.compile(rf"\b{escaped_word}\b", re.IGNORECASE)
+            pattern = re.compile(rf"(?<!\w){escaped_word}(?!\w)", re.IGNORECASE)
             self.regex_patterns.append((pattern, token))
 
     def mask(self, text: str) -> Tuple[str, Dict]:

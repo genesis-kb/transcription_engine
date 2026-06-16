@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import traceback
 
 import click
@@ -570,20 +571,31 @@ def postprocess(
 @auto_start_server
 def translate(input_file, output, output_dir, registry, lang, log_dir, debug):
     """Translate text files using Sarvam AI and Genesis KB."""
-    configure_logger(log_level=logging.INFO)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+    configure_logger(log_level=logging.INFO, working_dir=log_dir)
     url = get_transcription_url()
     api_client = APIClient(url)
 
+    output_filename = None
     if output:
+        output_filename = os.path.basename(output)
         parent_dir = os.path.dirname(output)
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
-        output_dir = parent_dir or "."
+            output_dir = parent_dir
+        else:
+            output_dir = "."
 
     data = {
         "target_lang": lang,
         "output_dir": output_dir,
+        "registry": registry,
+        "log_dir": log_dir,
+        "debug": debug,
     }
+    if output_filename:
+        data["output_filename"] = output_filename
 
     try:
         queue_response = api_client.add_translation_to_queue(data, input_file)
@@ -593,6 +605,7 @@ def translate(input_file, output, output_dir, registry, lang, log_dir, debug):
         logger.info(start_response)
     except Exception as e:
         logger.error(f"Translation operation failed: {e}")
+        sys.exit(1)
 
 
 cli.add_command(commands.media)

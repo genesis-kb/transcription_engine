@@ -21,10 +21,11 @@ class TranslationResult:
     raw_translated_text: str
 
 class TranslationPipeline:
-    def __init__(self, registry_path: str, sarvam_api_key: str, target_lang: str = "hi-IN", gemma_model: str = "gemma3:4b"):
+    def __init__(self, registry_path: str, sarvam_api_key: str, target_lang: str = "hi-IN", gemma_model: str = "gemma3:4b", debug: bool = False):
         self.target_lang = target_lang
         self.masker = ProtectedWordMasker(registry_path)
         self.chunker = FixedBlockChunker(max_size=1500)
+        self.debug = debug
         
         sarvam = SarvamTranslator(sarvam_api_key)
         gemma = GemmaTranslator(gemma_model)
@@ -35,10 +36,27 @@ class TranslationPipeline:
     def translate_text(self, text: str) -> TranslationResult:
         logger.info("Starting translation pipeline...")
         
+        if not text.strip():
+            logger.info("Input text is empty or only whitespace. Returning early.")
+            return TranslationResult(
+                original_text=text,
+                masked_text=text,
+                token_map={},
+                translated_text=text,
+                raw_translated_text=text
+            )
+        
         # Stage 1: Mask
         logger.info("Stage 1: Masking protected words...")
         masked_text, token_map = self.masker.mask(text)
         logger.info(f"Masked {len(token_map)} unique terms.")
+        if self.debug:
+            try:
+                with open("debug_stage1_masked.txt", "w", encoding="utf-8") as f:
+                    f.write(masked_text)
+                logger.info("Saved intermediate masked text to debug_stage1_masked.txt")
+            except Exception as e:
+                logger.error(f"Failed to save debug masked text: {e}")
         
         # Stage 2: Translate via chunks
         logger.info("Stage 2: Chunking and translating...")
@@ -52,6 +70,13 @@ class TranslationPipeline:
             translated_chunks.append(translated_chunk)
             
         raw_translated_text = self.chunker.stitch(translated_chunks)
+        if self.debug:
+            try:
+                with open("debug_stage2_raw_translated.txt", "w", encoding="utf-8") as f:
+                    f.write(raw_translated_text)
+                logger.info("Saved intermediate raw translated text to debug_stage2_raw_translated.txt")
+            except Exception as e:
+                logger.error(f"Failed to save debug raw translated text: {e}")
         
         # Stage 3: Restore
         logger.info("Stage 3: Restoring tokens...")

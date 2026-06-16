@@ -1,4 +1,5 @@
 import functools
+import os
 
 import requests
 
@@ -46,8 +47,9 @@ class APIClient:
     to all requests.
     """
 
-    def __init__(self, base_url):
+    def __init__(self, base_url, timeout=10.0):
         self.base_url = base_url
+        self.timeout = timeout
 
     @api_error_handler
     def add_to_queue(self, data, source):
@@ -58,16 +60,17 @@ class APIClient:
                     f"{self.base_url}/transcription/add_to_queue/",
                     data=data,
                     files=files,
+                    timeout=self.timeout,
                 )
         else:
             data["source"] = source
             return requests.post(
-                f"{self.base_url}/transcription/add_to_queue/", data=data
+                f"{self.base_url}/transcription/add_to_queue/", data=data, timeout=self.timeout
             )
 
     @api_error_handler
     def start_transcription(self):
-        return requests.post(f"{self.base_url}/transcription/start/")
+        return requests.post(f"{self.base_url}/transcription/start/", timeout=self.timeout)
 
     @api_error_handler
     def preprocess_source(self, data, source):
@@ -78,28 +81,30 @@ class APIClient:
                     f"{self.base_url}/transcription/preprocess/",
                     data=data,
                     files=files,
+                    timeout=self.timeout,
                 )
         else:
             data["source"] = source
             return requests.post(
-                f"{self.base_url}/transcription/preprocess/", data=data
+                f"{self.base_url}/transcription/preprocess/", data=data, timeout=self.timeout
             )
 
     @api_error_handler
     def get_queue(self):
-        return requests.get(f"{self.base_url}/transcription/queue/")
+        return requests.get(f"{self.base_url}/transcription/queue/", timeout=self.timeout)
 
     @api_error_handler
     def add_translation_to_queue(self, data, source):
         with open(source, "rb") as f:
-            files = {"source_file": (source, f, "text/plain")}
+            files = {"source_file": (os.path.basename(source), f, "text/plain")}
             return requests.post(
                 f"{self.base_url}/translation/add_to_queue/",
                 data=data,
                 files=files,
+                timeout=self.timeout,
             )
 
     @api_error_handler
     def start_translation(self):
-        return requests.post(f"{self.base_url}/translation/start/")
+        return requests.post(f"{self.base_url}/translation/start/", timeout=self.timeout)
 

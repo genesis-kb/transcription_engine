@@ -1,5 +1,6 @@
 import time
 import requests
+import requests.exceptions
 from typing import Optional
 from app.logging import get_logger
 from .base_translator import BaseTranslator, TranslatorExhausted, TranslatorError
@@ -7,9 +8,10 @@ from .base_translator import BaseTranslator, TranslatorExhausted, TranslatorErro
 logger = get_logger()
 
 class SarvamTranslator(BaseTranslator):
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, timeout: float = 10.0):
         self.api_key = api_key
         self.base_url = "https://api.sarvam.ai/translate"
+        self.timeout = timeout
         
     @property
     def name(self) -> str:
@@ -45,7 +47,7 @@ class SarvamTranslator(BaseTranslator):
 
         for attempt in range(max_retries):
             try:
-                response = requests.post(self.base_url, json=payload, headers=headers)
+                response = requests.post(self.base_url, json=payload, headers=headers, timeout=self.timeout)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -59,10 +61,10 @@ class SarvamTranslator(BaseTranslator):
                 else:
                     logger.error(f"Sarvam API error {response.status_code}: {response.text}")
                     raise TranslatorError(f"Sarvam API error {response.status_code}: {response.text}")
-            except Exception as e:
+            except requests.exceptions.RequestException as e:
                 logger.error(f"Sarvam API exception: {e}")
                 if attempt == max_retries - 1:
-                    raise TranslatorExhausted(f"Sarvam max retries exhausted: {e}")
+                    raise TranslatorExhausted(f"Sarvam max retries exhausted: {e}") from e
                 time.sleep(2 ** attempt * 5)
                 
         raise TranslatorExhausted("Sarvam max retries exhausted due to rate limits")

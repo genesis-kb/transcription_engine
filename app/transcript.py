@@ -18,32 +18,57 @@ from app.config import settings
 from app.media_processor import MediaProcessor
 
 
+import threading
 from contextlib import contextmanager
+
+# Global lock so that concurrent requests serialise around the monkeypatch.
+# Only one thread at a time may hold the patched getaddrinfo; all others
+# block until it is restored. This prevents races on save/restore of the
+# global function pointer and avoids leaving the patched version in place
+# if two contexts overlap.
+_ssrf_lock = threading.Lock()
 
 @contextmanager
 def _ssrf_protection():
-    """Context manager that patches socket.getaddrinfo to prevent SSRF and DNS rebinding."""
-    import socket
-    import ipaddress
-    _orig_getaddrinfo = socket.getaddrinfo
+    """Context manager that patches socket.getaddrinfo to prevent SSRF.
+
+    Thread-safety: a module-level lock serialises concurrent callers so the
+    patch is never active for more than one request at a time.
+
+    IP allowlist: only globally-routable unicast addresses are permitted.
+    This implicitly rejects loopback, private, link-local, multicast,
+    unspecified (0.0.0.0 / ::), and IANA-reserved ranges — catching all the
+    categories a pure denylist approach could miss.
+    """
+    import socket as _socket
+    import ipaddress as _ipaddress
+
+    _orig_getaddrinfo = _socket.getaddrinfo
 
     def safe_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
         addr_infos = _orig_getaddrinfo(host, port, family, type, proto, flags)
         for res in addr_infos:
             ip_str = res[4][0]
             try:
-                addr = ipaddress.ip_address(ip_str)
+                addr = _ipaddress.ip_address(ip_str)
             except ValueError:
                 continue
-            if addr.is_loopback or addr.is_private or addr.is_link_local or addr.is_multicast:
-                raise ValueError(f"SSRF Attempt: Resolved IP {addr} for '{host}' is not permitted.")
+            # Allowlist approach: only globally-routable IPs are permitted.
+            # is_global is False for loopback, private, link-local, multicast,
+            # unspecified (0.0.0.0/::), and IANA-reserved ranges.
+            if not addr.is_global:
+                raise ValueError(
+                    f"SSRF Attempt: Resolved IP {addr} for '{host}' is not permitted "
+                    "(only globally-routable addresses are allowed)."
+                )
         return addr_infos
 
-    socket.getaddrinfo = safe_getaddrinfo
-    try:
-        yield
-    finally:
-        socket.getaddrinfo = _orig_getaddrinfo
+    with _ssrf_lock:
+        _socket.getaddrinfo = safe_getaddrinfo
+        try:
+            yield
+        finally:
+            _socket.getaddrinfo = _orig_getaddrinfo
 
 
 def _validate_scrape_url(url: str) -> None:
@@ -722,6 +747,9 @@ class Scraper(Source):
         # Scraping is deferred to process() so that construction is side-effect-free
         # and the pipeline's retry/circuit-break logic can manage network failures.
 
+    # Maximum response body size (bytes) accepted from a scraped page.
+    _MAX_SCRAPE_BYTES = 5 * 1024 * 1024  # 5 MB
+
     def __config_source(self):
         from bs4 import BeautifulSoup
         try:
@@ -736,12 +764,45 @@ class Scraper(Source):
                 response = requests.get(
                     self.source_file,
                     headers=headers,
-                    timeout=15,
+                    timeout=(10, 30),   # (connect timeout, read timeout) in seconds
                     allow_redirects=True,
-                    stream=False,
+                    stream=True,        # stream so we can enforce a size cap
                 )
             response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
+
+            # Reject non-HTML content types before reading the body.
+            content_type = response.headers.get("Content-Type", "")
+            if "text/html" not in content_type and "application/xhtml" not in content_type:
+                raise ValueError(
+                    f"Unexpected Content-Type '{content_type}' for {self.source_file}; "
+                    "only HTML pages are supported."
+                )
+
+            # Check Content-Length if provided before reading.
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > self._MAX_SCRAPE_BYTES:
+                raise ValueError(
+                    f"Response too large ({content_length} bytes) for {self.source_file}; "
+                    f"limit is {self._MAX_SCRAPE_BYTES} bytes."
+                )
+
+            # Read body with a hard cap regardless of Content-Length.
+            chunks = []
+            total = 0
+            for chunk in response.iter_content(chunk_size=65536):
+                total += len(chunk)
+                if total > self._MAX_SCRAPE_BYTES:
+                    raise ValueError(
+                        f"Response body exceeded {self._MAX_SCRAPE_BYTES} bytes for "
+                        f"{self.source_file}; aborting download."
+                    )
+                chunks.append(chunk)
+            html_bytes = b"".join(chunks)
+            html_text = html_bytes.decode(
+                response.encoding or "utf-8", errors="replace"
+            )
+
+            soup = BeautifulSoup(html_text, "html.parser")
             
             if not self.title:
                 title_text = soup.title.get_text(strip=True) if soup.title else None

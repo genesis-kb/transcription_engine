@@ -268,8 +268,13 @@ class Transcription:
             ):
                 return Audio(source=source, chapters=chapters)
             
-            if lower_url.endswith(("rss", ".xml")) or "feed" in lower_url.split("/"):
-                return RSS(source=source)
+            if lower_url.endswith(("rss", ".xml")):
+                # Strong structural signal — attempt RSS parse directly.
+                try:
+                    return RSS(source=source)
+                except Exception:
+                    # feedparser rejected it; fall through to other handlers.
+                    pass
 
             if youtube_metadata is not None:
                 # we have youtube metadata, this can only be true for videos
@@ -284,10 +289,12 @@ class Transcription:
                 source.preprocess = False
                 return Video(source=source)
                 
-            # If it's a web page, not youtube, use Scraper
-            import urllib.parse
+            # If it's a web page that is not a known YouTube hostname, use Scraper.
+            # Use hostname (not netloc) and an exact allowlist to prevent bypass via
+            # subdomains like "youtube.com.evil.com" or "www.notyoutube.com".
+            _YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
             parsed_url = urllib.parse.urlparse(lower_url)
-            is_youtube = ("youtube.com" in parsed_url.netloc or "youtu.be" in parsed_url.netloc)
+            is_youtube = parsed_url.hostname in _YOUTUBE_HOSTS
             if lower_url.startswith(("http://", "https://")) and not is_youtube:
                 return Scraper(source=source)
 
@@ -611,7 +618,17 @@ class Transcription:
                 t.outputs["raw"] = test_transcript or "test-mode"
             else:
                 if getattr(t.source, 'is_text_only', False):
-                    t.outputs["raw"] = t.source.extracted_text
+                    extracted = t.source.extracted_text
+                    if not extracted:
+                        # process() may not have run yet — trigger it now.
+                        t.process_source(t.tmp_dir)
+                        extracted = t.source.extracted_text
+                    if not extracted:
+                        raise ValueError(
+                            f"Scraper for '{t.source.source_file}' produced no text. "
+                            "Check that the page is publicly accessible and contains readable content."
+                        )
+                    t.outputs["raw"] = extracted
                     self.logger.info("Skipped ASR for text-only source")
                 else:
                     ensure_media_available(t)

@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import time
+import urllib.parse
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -272,9 +273,12 @@ class Transcription:
                 # Strong structural signal — attempt RSS parse directly.
                 try:
                     return RSS(source=source)
-                except Exception:
-                    # feedparser rejected it; fall through to other handlers.
-                    pass
+                except Exception as rss_exc:
+                    # feedparser rejected it; log and fall through to other handlers.
+                    self.logger.debug(
+                        f"RSS parse failed for '{source.source_file}', "
+                        f"falling through to next handler: {rss_exc}"
+                    )
 
             if youtube_metadata is not None:
                 # we have youtube metadata, this can only be true for videos

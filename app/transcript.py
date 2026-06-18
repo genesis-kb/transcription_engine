@@ -43,27 +43,29 @@ def _ssrf_protection():
     import socket as _socket
     import ipaddress as _ipaddress
 
-    _orig_getaddrinfo = _socket.getaddrinfo
-
-    def safe_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-        addr_infos = _orig_getaddrinfo(host, port, family, type, proto, flags)
-        for res in addr_infos:
-            ip_str = res[4][0]
-            try:
-                addr = _ipaddress.ip_address(ip_str)
-            except ValueError:
-                continue
-            # Allowlist approach: only globally-routable IPs are permitted.
-            # is_global is False for loopback, private, link-local, multicast,
-            # unspecified (0.0.0.0/::), and IANA-reserved ranges.
-            if not addr.is_global:
-                raise ValueError(
-                    f"SSRF Attempt: Resolved IP {addr} for '{host}' is not permitted "
-                    "(only globally-routable addresses are allowed)."
-                )
-        return addr_infos
-
+    # Capture the original *inside* the lock so we always snapshot the real
+    # getaddrinfo, never an already-patched version from another thread.
     with _ssrf_lock:
+        _orig_getaddrinfo = _socket.getaddrinfo
+
+        def safe_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+            addr_infos = _orig_getaddrinfo(host, port, family, type, proto, flags)
+            for res in addr_infos:
+                ip_str = res[4][0]
+                try:
+                    addr = _ipaddress.ip_address(ip_str)
+                except ValueError:
+                    continue
+                # Allowlist approach: only globally-routable IPs are permitted.
+                # is_global is False for loopback, private, link-local, multicast,
+                # unspecified (0.0.0.0/::), and IANA-reserved ranges.
+                if not addr.is_global:
+                    raise ValueError(
+                        f"SSRF Attempt: Resolved IP {addr} for '{host}' is not permitted "
+                        "(only globally-routable addresses are allowed)."
+                    )
+            return addr_infos
+
         _socket.getaddrinfo = safe_getaddrinfo
         try:
             yield
@@ -760,62 +762,71 @@ class Scraper(Source):
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.5"
             }
+            # trust_env=False prevents the session from honouring HTTP_PROXY /
+            # HTTPS_PROXY environment variables, which could route traffic through
+            # an attacker-controlled proxy and bypass SSRF protection.
+            session = requests.Session()
+            session.trust_env = False
             with _ssrf_protection():
-                response = requests.get(
+                response = session.get(
                     self.source_file,
                     headers=headers,
                     timeout=(10, 30),   # (connect timeout, read timeout) in seconds
                     allow_redirects=True,
                     stream=True,        # stream so we can enforce a size cap
                 )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
 
-            # Reject non-HTML content types before reading the body.
-            content_type = response.headers.get("Content-Type", "")
-            if "text/html" not in content_type and "application/xhtml" not in content_type:
-                raise ValueError(
-                    f"Unexpected Content-Type '{content_type}' for {self.source_file}; "
-                    "only HTML pages are supported."
-                )
-
-            # Check Content-Length if provided before reading.
-            content_length = response.headers.get("Content-Length")
-            if content_length and int(content_length) > self._MAX_SCRAPE_BYTES:
-                raise ValueError(
-                    f"Response too large ({content_length} bytes) for {self.source_file}; "
-                    f"limit is {self._MAX_SCRAPE_BYTES} bytes."
-                )
-
-            # Read body with a hard cap regardless of Content-Length.
-            chunks = []
-            total = 0
-            for chunk in response.iter_content(chunk_size=65536):
-                total += len(chunk)
-                if total > self._MAX_SCRAPE_BYTES:
+                # Reject non-HTML content types before reading the body.
+                content_type = response.headers.get("Content-Type", "")
+                if "text/html" not in content_type and "application/xhtml" not in content_type:
                     raise ValueError(
-                        f"Response body exceeded {self._MAX_SCRAPE_BYTES} bytes for "
-                        f"{self.source_file}; aborting download."
+                        f"Unexpected Content-Type '{content_type}' for {self.source_file}; "
+                        "only HTML pages are supported."
                     )
-                chunks.append(chunk)
-            html_bytes = b"".join(chunks)
-            html_text = html_bytes.decode(
-                response.encoding or "utf-8", errors="replace"
-            )
+
+                # Check Content-Length if provided before reading.
+                content_length = response.headers.get("Content-Length")
+                if content_length and int(content_length) > self._MAX_SCRAPE_BYTES:
+                    raise ValueError(
+                        f"Response too large ({content_length} bytes) for {self.source_file}; "
+                        f"limit is {self._MAX_SCRAPE_BYTES} bytes."
+                    )
+
+                # Read body with a hard cap regardless of Content-Length.
+                body_chunks = []
+                total = 0
+                for chunk in response.iter_content(chunk_size=65536):
+                    total += len(chunk)
+                    if total > self._MAX_SCRAPE_BYTES:
+                        raise ValueError(
+                            f"Response body exceeded {self._MAX_SCRAPE_BYTES} bytes for "
+                            f"{self.source_file}; aborting download."
+                        )
+                    body_chunks.append(chunk)
+                html_bytes = b"".join(body_chunks)
+                html_text = html_bytes.decode(
+                    response.encoding or "utf-8", errors="replace"
+                )
+            finally:
+                response.close()
 
             soup = BeautifulSoup(html_text, "html.parser")
-            
-            if not self.title:
-                title_text = soup.title.get_text(strip=True) if soup.title else None
-                self.title = title_text or self.source_file
-                
+
+            # Store the scraped page title separately so self.title (which was
+            # used to derive output_path_with_title at enqueue time) stays stable.
+            scraped_title = soup.title.get_text(strip=True) if soup.title else None
+            self.scraped_title = scraped_title or self.title or self.source_file
+
             for script in soup(["script", "style", "nav", "footer", "header", "aside"]):
                 script.extract()
-            
+
             text = soup.get_text(separator='\n')
             lines = (line.strip() for line in text.splitlines())
             chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
             self.extracted_text = '\n'.join(chunk for chunk in chunks if chunk)
-            self.logger.info(f"Successfully scraped article: {self.title}")
+            self.logger.info(f"Successfully scraped article: {self.scraped_title}")
         except Exception as e:
             self.logger.error(f"Failed to scrape article {self.source_file}: {e}")
             raise Exception(f"Failed to scrape article: {e}") from e

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from app.database import get_session
@@ -53,7 +54,18 @@ class PlaylistService:
                 status="draft",
             )
             session.add(pl)
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                pl = (
+                    session.query(AudioPlaylist)
+                    .filter_by(slug=slug)
+                    .first()
+                )
+                if pl:
+                    return pl.to_dict()
+                raise
             logger.info(f"Created playlist: {title} ({slug})")
             return pl.to_dict()
 
@@ -218,7 +230,21 @@ class PlaylistService:
                 status="pending",
             )
             session.add(ep)
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                ep = (
+                    session.query(AudioEpisode)
+                    .filter_by(
+                        playlist_id=playlist_id,
+                        sequence_number=sequence_number,
+                    )
+                    .first()
+                )
+                if ep:
+                    return ep.to_dict(), False
+                raise
             logger.info(
                 f"Created episode #{sequence_number}: {title}"
             )
@@ -236,7 +262,7 @@ class PlaylistService:
     ) -> dict:
         """Create a new episode (raises on duplicate). Use
         find_or_create_episode for idempotent behaviour."""
-        ep, _ = self.find_or_create_episode(
+        ep, created = self.find_or_create_episode(
             playlist_id=playlist_id,
             title=title,
             sequence_number=sequence_number,
@@ -244,6 +270,11 @@ class PlaylistService:
             description=description,
             metadata=metadata,
         )
+        if not created:
+            raise ValueError(
+                f"Episode #{sequence_number} already exists in playlist "
+                f"{playlist_id}"
+            )
         return ep
 
     def update_episode(

@@ -118,6 +118,14 @@ def parse_file(filepath: Path) -> Optional[InputFile]:
                 "skipping"
             )
             return None
+        try:
+            seq = int(meta.get("sequence_number", 1))
+        except (ValueError, TypeError):
+            logger.error(
+                f"Invalid sequence_number in {filepath.name}: "
+                f"{meta.get('sequence_number')!r}, skipping"
+            )
+            return None
         return InputFile(
             filepath=filepath,
             input_type="series",
@@ -125,7 +133,7 @@ def parse_file(filepath: Path) -> Optional[InputFile]:
             body=body,
             series_slug=meta["series_slug"],
             series_title=meta.get("series_title", title),
-            sequence_number=int(meta.get("sequence_number", 1)),
+            sequence_number=seq,
             author=meta.get("author"),
             source_url=meta.get("source_url"),
             description=meta.get("description"),

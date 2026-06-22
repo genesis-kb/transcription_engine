@@ -26,7 +26,7 @@ def _service() -> PlaylistService:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/playlists")
-async def list_playlists(
+def list_playlists(
     status: Optional[str] = Query(
         None,
         description="Filter by status: draft | published | archived",
@@ -66,7 +66,7 @@ async def list_playlists(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/playlists/{slug}")
-async def get_playlist(slug: str):
+def get_playlist(slug: str):
     """Get a single playlist by slug, including all ordered episodes.
 
     Episodes are sorted by sequence_number ascending.
@@ -92,7 +92,7 @@ async def get_playlist(slug: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/episodes/{episode_id}")
-async def get_episode(episode_id: str):
+def get_episode(episode_id: str):
     """Get a single episode by UUID.
 
     Useful for deep-linking directly to a specific episode.

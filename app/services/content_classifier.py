@@ -60,7 +60,7 @@ class ContentClassifier:
             try:
                 result = self._classify_item(item)
                 classified += 1
-                if result["is_technical"]:
+                if result["is_technical"] and result["confidence"] >= self.confidence_threshold:
                     approved += 1
                 else:
                     rejected += 1
@@ -106,7 +106,7 @@ class ContentClassifier:
         Returns:
             Classification result dict.
         """
-        source_metadata = item.get("source_metadata", {})
+        source_metadata = item.get("source_metadata") or {}
         duration = source_metadata.get("duration") or 0
         
         # Skip items outside duration range
@@ -165,7 +165,7 @@ class ContentClassifier:
     def _save_classification(self, item: dict, result: dict, status: str):
         """Persist classification result to the database."""
         item_id = item["id"]
-        source_metadata = item.get("source_metadata", {})
+        source_metadata = item.get("source_metadata") or {}
         source_metadata["classification_reason"] = result["reason"]
         source_metadata["classification_confidence"] = result["confidence"]
         

@@ -119,7 +119,12 @@ def run_migration(dry_run=False):
                     NULL,
                     created_at
                 FROM deduped_source_rows
-                ON CONFLICT DO NOTHING;
+                ON CONFLICT (slug) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    base_url = EXCLUDED.base_url,
+                    config = EXCLUDED.config,
+                    is_active = EXCLUDED.is_active,
+                    created_at = EXCLUDED.created_at;
             """
             if not dry_run:
                 res = conn.execute(text(migrate_sources_sql))
@@ -220,6 +225,7 @@ def run_migration(dry_run=False):
                     conn.execute(text("""
                         INSERT INTO transcripts (id, content_item_id, is_current, version, raw_text, corrected_text, created_at)
                         VALUES (:t_id, :ci_id, true, 1, :raw, :corr, :created_at)
+                        ON CONFLICT (id) DO NOTHING
                     """), {"t_id": t_id, "ci_id": content_item_id, "raw": raw, "corr": corrected, "created_at": t.created_at})
                     migrated_transcripts_count += 1
                     

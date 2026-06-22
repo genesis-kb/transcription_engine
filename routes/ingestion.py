@@ -203,7 +203,7 @@ async def override_item(item_id: str, override: ItemOverride):
     # Update source_metadata to include reason
     item = db.get_item_by_id(item_id)
     if item:
-        meta = item.get("source_metadata", {})
+        meta = item.get("source_metadata") or {}
         meta["classification_reason"] = override.classification_reason or "Manual override"
         meta["classification_confidence"] = 1.0
         updates["source_metadata"] = meta

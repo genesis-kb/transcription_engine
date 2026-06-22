@@ -77,8 +77,7 @@ Open a **second terminal** (with the virtual environment activated) and run:
 
 ```bash
 curl -X POST http://localhost:8000/transcription/add_to_queue/ \
-  -H "Content-Type: application/json" \
-  -d '{"source": "https://www.youtube.com/watch?v=<VIDEO_ID>"}'
+  -F "source=https://www.youtube.com/watch?v=<VIDEO_ID>"
 ```
 
 Repeat for each video you want to queue. You can script this to queue multiple videos at once:
@@ -87,8 +86,7 @@ Repeat for each video you want to queue. You can script this to queue multiple v
 VIDEO_IDS=("id1" "id2" "id3")
 for id in "${VIDEO_IDS[@]}"; do
   curl -X POST http://localhost:8000/transcription/add_to_queue/ \
-    -H "Content-Type: application/json" \
-    -d "{\"source\": \"https://www.youtube.com/watch?v=${id}\"}"
+    -F "source=https://www.youtube.com/watch?v=${id}"
 done
 ```
 

@@ -5,13 +5,16 @@ import re
 
 class TTSProvider(ABC):
     name: str = "base"
+    supported_formats: set[str] = {"mp3", "wav"}
 
     def __init__(self, api_key: str, voice: str, fmt: str = "mp3",
                  speed: float = 1.0, model: str | None = None,
                  lexicon: dict[str, str] | None = None):
-        supported_formats = {"mp3", "wav", "linear16", "pcm"}
-        if fmt not in supported_formats:
-            raise ValueError(f"Unsupported TTS format '{fmt}'. Must be one of: {supported_formats}")
+        if fmt not in self.supported_formats:
+            raise ValueError(
+                f"Unsupported format '{fmt}' for {self.name} provider. "
+                f"Must be one of: {sorted(self.supported_formats)}"
+            )
         self.api_key = api_key
         self.voice = voice
         self.fmt = fmt
@@ -34,6 +37,7 @@ class TTSProvider(ABC):
 
 class DeepgramTTS(TTSProvider):
     name = "deepgram"
+    supported_formats = {"mp3", "wav", "linear16"}
 
     def synthesize(self, text: str) -> bytes:
         text = self.apply_lexicon_fallback(text)
@@ -51,6 +55,7 @@ class DeepgramTTS(TTSProvider):
 
 class SmallestTTS(TTSProvider):
     name = "smallest"
+    supported_formats = {"mp3", "wav", "pcm"}
 
     def synthesize(self, text: str) -> bytes:
         text = self.apply_lexicon_fallback(text)

@@ -18,8 +18,12 @@ def main():
         return
 
     with get_session() as session:
-        # Find all episodes that have local paths
-        episodes = session.query(AudioEpisode).filter(AudioEpisode.audio_url.like('/home/%')).all()
+        # Find all episodes that have local paths (not remote URLs)
+        episodes = session.query(AudioEpisode).filter(
+            AudioEpisode.audio_url.isnot(None),
+            ~AudioEpisode.audio_url.like('http://%'),
+            ~AudioEpisode.audio_url.like('https://%'),
+        ).all()
         
         if not episodes:
             logger.info("No episodes with local audio paths found.")

@@ -53,8 +53,20 @@ def rewrite(text: str, cfg: dict[str, Any]) -> dict[str, Any]:
         
     valid_chapters = []
     for ch in chapters:
-        if isinstance(ch, dict) and "title" in ch and "text" in ch:
-            valid_chapters.append(ch)
+        if not isinstance(ch, dict):
+            continue
+        title = ch.get("title")
+        text_val = ch.get("text")
+        # Coerce non-string values; skip entries that are None or non-stringable
+        if title is None or text_val is None:
+            continue
+        if not isinstance(title, str):
+            title = str(title)
+        if not isinstance(text_val, str):
+            text_val = str(text_val)
+        if not title.strip():
+            continue
+        valid_chapters.append({"title": title.strip(), "text": text_val})
             
     manifest["chapters"] = valid_chapters
     return manifest

@@ -133,16 +133,25 @@ class AudioPipeline:
             manifest["title"] = title  # preserve caller's title
 
         chapters = manifest.get("chapters", [])
+        if not chapters:
+            logger.warning(
+                "[pipeline] LLM rewrite returned no chapters, "
+                "falling back to single chapter from cleaned text"
+            )
+            chapters = [{"title": title, "text": clean_txt}]
+            manifest["chapters"] = chapters
 
-        # Resolve output directory
+        # Resolve output and cache directories from config, with defaults
+        paths_cfg = cfg.get("paths") or {}
+        base_output = Path(paths_cfg.get("output_dir") or DEFAULT_OUTPUT_DIR)
+        cache_dir = Path(paths_cfg.get("cache_dir") or DEFAULT_CACHE_DIR)
+
         if output_dir is None:
             safe_title = "".join(
                 c if c.isalnum() or c in " -_" else ""
                 for c in title
             ).strip() or "episode"
-            output_dir = DEFAULT_OUTPUT_DIR / safe_title
-
-        cache_dir = DEFAULT_CACHE_DIR
+            output_dir = base_output / safe_title
 
         # Step 3+4: Normalize → chunk → TTS per chapter
         chapters_audio: list[AudioSegment] = []

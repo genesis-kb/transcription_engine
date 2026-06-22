@@ -139,7 +139,14 @@ def chunk_split(text: str, max_chars: int) -> list[str]:
             
             if len(part) > max_chars:
                 for word in part.split():
-                    if len(current) + len(word) + 1 > max_chars:
+                    if len(word) > max_chars:
+                        # Word itself exceeds limit — split at character level
+                        if current.strip():
+                            chunks.append(current.strip())
+                            current = ""
+                        for i in range(0, len(word), max_chars):
+                            chunks.append(word[i:i + max_chars])
+                    elif len(current) + len(word) + 1 > max_chars:
                         if current.strip():
                             chunks.append(current.strip())
                         current = word

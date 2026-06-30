@@ -1,13 +1,12 @@
+"""
+Existing factory tests — kept and extended by test_asr_providers.py.
+The clean_registry autouse fixture is provided by conftest.py.
+"""
 import pytest
 from unittest.mock import MagicMock
 from app.services.factory import get_asr_service, get_available_providers, reset_registry
 from app.services.providers.base import BaseTranscriptionService
 
-@pytest.fixture(autouse=True)
-def clean_registry():
-    reset_registry()
-    yield
-    reset_registry()
 
 def test_get_asr_service_unknown_provider():
     mock_writer = MagicMock()
@@ -27,14 +26,12 @@ def test_get_asr_service_success(monkeypatch):
     providers = get_available_providers()
     if not providers:
         pytest.fail("No ASR providers discovered")
-    provider_name = "whisper" if "whisper" in providers else providers[0]
-
+    provider_name = providers[0]
+    
     # Mock environment variables for providers that require them on init
     if provider_name == "deepgram":
         monkeypatch.setenv("DEEPGRAM_API_KEY", "dummy_key")
-    elif provider_name == "smallestai":
-        monkeypatch.setenv("SMALLEST_API_KEY", "dummy_key")
-
+        
     service = get_asr_service(provider_name, {}, mock_writer)
     assert isinstance(service, BaseTranscriptionService)
     assert service.__class__.PROVIDER_NAME == provider_name

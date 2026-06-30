@@ -1,17 +1,36 @@
+"""
+MetadataExtractorService Unit Tests
+=====================================
+Covers:
+- ``process()`` with YouTube metadata  → LLM called, fields set
+- ``process()`` with no YouTube metadata → LLM NOT called
+- ``process()`` preserves manually-set speakers
+- ``process()`` handles LLM failure gracefully
+- ``process()`` handles malformed JSON from LLM
+- ``_parse_response()`` — valid JSON, markdown-wrapped JSON, invalid JSON
+- ``_build_prompt()``  — verifies key fields appear in the generated prompt
+
+Ported verbatim from ``test/test_metadata_extractor.py``.
+"""
+
 from unittest import mock
 
 import pytest
 
 from app.services.metadata_extractor import MetadataExtractorService
 
+pytestmark = [pytest.mark.unit, pytest.mark.services]
+
+
+# ---------------------------------------------------------------------------
+# Local fixtures (specific to this module)
+# ---------------------------------------------------------------------------
 
 @pytest.fixture
-def mock_transcript():
-    """Create a mock transcript with YouTube metadata."""
+def mock_transcript_with_youtube():
+    """Mock transcript that has YouTube metadata."""
     transcript = mock.MagicMock()
-    transcript.source.title = (
-        "Taproot Activation - Pieter Wuille - Bitcoin 2021"
-    )
+    transcript.source.title = "Taproot Activation - Pieter Wuille - Bitcoin 2021"
     transcript.source.speakers = []
     transcript.source.conference = None
     transcript.source.topics = []
@@ -26,7 +45,7 @@ def mock_transcript():
 
 @pytest.fixture
 def mock_transcript_no_youtube():
-    """Create a mock transcript without YouTube metadata."""
+    """Mock transcript without YouTube metadata."""
     transcript = mock.MagicMock()
     transcript.source.title = "Local Audio Talk"
     transcript.source.speakers = ["Manual Speaker"]
@@ -38,7 +57,7 @@ def mock_transcript_no_youtube():
 
 @pytest.fixture
 def mock_transcript_with_speakers():
-    """Create a mock transcript with manually-set speakers."""
+    """Mock transcript with already-set speakers (should not be overwritten)."""
     transcript = mock.MagicMock()
     transcript.source.title = "Some Talk"
     transcript.source.speakers = ["Already Set Speaker"]
@@ -53,56 +72,52 @@ def mock_transcript_with_speakers():
     return transcript
 
 
-def _mock_genai_client(response_text):
-    """Helper to set up a mock genai.Client that returns the given text."""
-    mock_client = mock.MagicMock()
-    mock_client.models.generate_content.return_value.text = response_text
-    return mock_client
+def _mock_genai_client(response_text: str):
+    """Return a mock genai.Client that yields the given text."""
+    client = mock.MagicMock()
+    client.models.generate_content.return_value.text = response_text
+    return client
 
 
-class TestMetadataExtractorService:
+# ---------------------------------------------------------------------------
+# process() tests
+# ---------------------------------------------------------------------------
+
+class TestMetadataExtractorServiceProcess:
+
     @mock.patch("app.services.metadata_extractor.genai")
     @mock.patch("app.services.metadata_extractor.settings")
     def test_process_extracts_metadata(
-        self, mock_settings, mock_genai, mock_transcript
+        self, mock_settings, mock_genai, mock_transcript_with_youtube
     ):
-        """Test that process() correctly extracts and sets metadata."""
+        """process() must extract speakers, conference, and topics from YouTube metadata."""
         mock_settings.GOOGLE_API_KEY = "test-key"
-
-        mock_client = _mock_genai_client(
+        mock_genai.Client.return_value = _mock_genai_client(
             '{"speakers": ["Pieter Wuille"], "conference": "Bitcoin 2021", '
             '"topics": ["Taproot", "Schnorr Signatures", "Script Upgrades"]}'
         )
-        mock_genai.Client.return_value = mock_client
 
-        service = MetadataExtractorService()
-        service.process(mock_transcript)
+        MetadataExtractorService().process(mock_transcript_with_youtube)
 
-        assert mock_transcript.source.speakers == ["Pieter Wuille"]
-        assert mock_transcript.source.conference == "Bitcoin 2021"
-        assert mock_transcript.source.topics == [
-            "Taproot",
-            "Schnorr Signatures",
-            "Script Upgrades",
+        assert mock_transcript_with_youtube.source.speakers == ["Pieter Wuille"]
+        assert mock_transcript_with_youtube.source.conference == "Bitcoin 2021"
+        assert mock_transcript_with_youtube.source.topics == [
+            "Taproot", "Schnorr Signatures", "Script Upgrades"
         ]
 
     @mock.patch("app.services.metadata_extractor.genai")
     @mock.patch("app.services.metadata_extractor.settings")
-    def test_process_skips_no_youtube(
+    def test_process_skips_when_no_youtube_metadata(
         self, mock_settings, mock_genai, mock_transcript_no_youtube
     ):
-        """Test that process() skips when no YouTube metadata is present."""
+        """process() must NOT call the LLM when youtube_metadata is None."""
         mock_settings.GOOGLE_API_KEY = "test-key"
-
         mock_client = mock.MagicMock()
         mock_genai.Client.return_value = mock_client
 
-        service = MetadataExtractorService()
-        service.process(mock_transcript_no_youtube)
+        MetadataExtractorService().process(mock_transcript_no_youtube)
 
-        # Should not call the LLM at all
         mock_client.models.generate_content.assert_not_called()
-        # Speakers should remain as manually set
         assert mock_transcript_no_youtube.source.speakers == ["Manual Speaker"]
 
     @mock.patch("app.services.metadata_extractor.genai")
@@ -110,70 +125,65 @@ class TestMetadataExtractorService:
     def test_process_preserves_manual_speakers(
         self, mock_settings, mock_genai, mock_transcript_with_speakers
     ):
-        """Test that manually-set speakers are NOT overwritten."""
+        """Manually-set speakers must NOT be overwritten by LLM extraction."""
         mock_settings.GOOGLE_API_KEY = "test-key"
-
-        mock_client = _mock_genai_client(
+        mock_genai.Client.return_value = _mock_genai_client(
             '{"speakers": ["LLM Extracted Speaker"], "conference": "Some Event", "topics": ["Mining"]}'
         )
-        mock_genai.Client.return_value = mock_client
 
-        service = MetadataExtractorService()
-        service.process(mock_transcript_with_speakers)
+        MetadataExtractorService().process(mock_transcript_with_speakers)
 
-        # Speakers should NOT be overwritten
-        assert mock_transcript_with_speakers.source.speakers == [
-            "Already Set Speaker"
-        ]
-        # But conference and topics should still be set
+        assert mock_transcript_with_speakers.source.speakers == ["Already Set Speaker"]
         assert mock_transcript_with_speakers.source.conference == "Some Event"
         assert mock_transcript_with_speakers.source.topics == ["Mining"]
 
     @mock.patch("app.services.metadata_extractor.genai")
     @mock.patch("app.services.metadata_extractor.settings")
     def test_process_handles_llm_failure(
-        self, mock_settings, mock_genai, mock_transcript
+        self, mock_settings, mock_genai, mock_transcript_with_youtube
     ):
-        """Test that LLM failure leaves existing metadata intact."""
+        """An exception from the LLM must leave existing metadata intact."""
         mock_settings.GOOGLE_API_KEY = "test-key"
-
         mock_client = mock.MagicMock()
-        mock_client.models.generate_content.side_effect = Exception(
-            "API Error"
-        )
+        mock_client.models.generate_content.side_effect = Exception("API Error")
         mock_genai.Client.return_value = mock_client
 
-        service = MetadataExtractorService()
-        service.process(mock_transcript)
+        MetadataExtractorService().process(mock_transcript_with_youtube)
 
-        # Should leave metadata unchanged
-        assert mock_transcript.source.speakers == []
-        assert mock_transcript.source.conference is None
-        assert mock_transcript.source.topics == []
+        assert mock_transcript_with_youtube.source.speakers == []
+        assert mock_transcript_with_youtube.source.conference is None
+        assert mock_transcript_with_youtube.source.topics == []
 
     @mock.patch("app.services.metadata_extractor.genai")
     @mock.patch("app.services.metadata_extractor.settings")
     def test_process_handles_malformed_json(
-        self, mock_settings, mock_genai, mock_transcript
+        self, mock_settings, mock_genai, mock_transcript_with_youtube
     ):
-        """Test graceful handling of malformed LLM JSON response."""
+        """Malformed JSON from the LLM must not crash; metadata stays unchanged."""
         mock_settings.GOOGLE_API_KEY = "test-key"
+        mock_genai.Client.return_value = _mock_genai_client("not valid json {{")
 
-        mock_client = _mock_genai_client("not valid json {{")
-        mock_genai.Client.return_value = mock_client
+        MetadataExtractorService().process(mock_transcript_with_youtube)
 
-        service = MetadataExtractorService()
-        service.process(mock_transcript)
+        assert mock_transcript_with_youtube.source.speakers == []
+        assert mock_transcript_with_youtube.source.conference is None
+        assert mock_transcript_with_youtube.source.topics == []
 
-        # Should leave metadata unchanged on parse failure
-        assert mock_transcript.source.speakers == []
-        assert mock_transcript.source.conference is None
-        assert mock_transcript.source.topics == []
 
-    def test_parse_response_valid_json(self):
-        """Test _parse_response with valid JSON."""
-        service = MetadataExtractorService.__new__(MetadataExtractorService)
-        result = service._parse_response(
+# ---------------------------------------------------------------------------
+# _parse_response() tests
+# ---------------------------------------------------------------------------
+
+class TestMetadataExtractorParseResponse:
+    """Unit tests for the internal _parse_response helper."""
+
+    # Use __new__ to bypass __init__ (avoids needing a real API key)
+    @pytest.fixture
+    def svc(self):
+        return MetadataExtractorService.__new__(MetadataExtractorService)
+
+    def test_valid_json(self, svc):
+        result = svc._parse_response(
             '{"speakers": ["Alice", "Bob"], "conference": "BTC Conf", "topics": ["Mining"]}'
         )
         assert result == {
@@ -182,10 +192,8 @@ class TestMetadataExtractorService:
             "topics": ["Mining"],
         }
 
-    def test_parse_response_markdown_wrapped(self):
-        """Test _parse_response with markdown code-block wrapped JSON."""
-        service = MetadataExtractorService.__new__(MetadataExtractorService)
-        result = service._parse_response(
+    def test_markdown_wrapped_json(self, svc):
+        result = svc._parse_response(
             '```json\n{"speakers": ["Alice"], "conference": "Event", "topics": ["Taproot"]}\n```'
         )
         assert result == {
@@ -194,16 +202,24 @@ class TestMetadataExtractorService:
             "topics": ["Taproot"],
         }
 
-    def test_parse_response_invalid_json(self):
-        """Test _parse_response with invalid JSON returns empty defaults."""
-        service = MetadataExtractorService.__new__(MetadataExtractorService)
-        result = service._parse_response("this is not json")
+    def test_invalid_json_returns_defaults(self, svc):
+        result = svc._parse_response("this is not json")
         assert result == {"speakers": [], "conference": "", "topics": []}
 
-    def test_build_prompt_includes_metadata(self):
-        """Test that the prompt includes all provided metadata."""
-        service = MetadataExtractorService.__new__(MetadataExtractorService)
-        prompt = service._build_prompt(
+
+# ---------------------------------------------------------------------------
+# _build_prompt() tests
+# ---------------------------------------------------------------------------
+
+class TestMetadataExtractorBuildPrompt:
+    """Unit tests for the internal _build_prompt helper."""
+
+    @pytest.fixture
+    def svc(self):
+        return MetadataExtractorService.__new__(MetadataExtractorService)
+
+    def test_prompt_includes_all_metadata(self, svc):
+        prompt = svc._build_prompt(
             title="Test Talk",
             description="A description",
             channel_name="Test Channel",

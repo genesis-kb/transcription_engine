@@ -52,6 +52,9 @@ class Transcription:
         no_db=False,
         asr_provider=None,
     ):
+        asr_provider = asr_provider or settings.ASR_PROVIDER
+        self.asr_provider_name = asr_provider
+
         if llm_provider is None:
             llm_provider = settings.LLM_PROVIDER
         if llm_correction_model is None:
@@ -72,9 +75,6 @@ class Transcription:
             raise ValueError("pipeline_retry_delay_seconds must be an integer >= 0")
         self._correct_enabled = correct
         self._summarize_enabled = summarize
-
-        asr_provider = asr_provider or settings.ASR_PROVIDER
-        self.asr_provider_name = asr_provider
         self.nocleanup = nocleanup
         self.status = "idle"
         self.test_mode = test_mode
@@ -276,9 +276,9 @@ class Transcription:
                     chapters=chapters,
                 )
             if source.source_file.lower().endswith((".mp4", ".webm", ".mov")):
-                # regular remote video, not youtube
+                # regular remote or local video, not youtube
                 source.preprocess = False
-                return Video(source=source)
+                return Video(source=source, chapters=chapters)
             youtube_source = check_if_youtube(source)
             if youtube_source == "unknown":
                 raise Exception(f"Invalid source: {source}")
@@ -625,18 +625,23 @@ class Transcription:
 
         # Load any state persisted from a previous run FIRST so that saved
         # "completed" stages are not overwritten by the pending initialisation below.
-        self._load_existing_pipeline_state(transcript)
+        # Skip in test_mode — there are no real ASR output files on disk, and
+        # loading stale pipeline state from a prior test run breaks isolation.
+        if not self.test_mode:
+            self._load_existing_pipeline_state(transcript)
 
         # If transcription was already completed in a previous run, load the
         # raw transcript text from disk so downstream stages (correction,
         # summarization) have actual content to work with.
-        transcription_done = (
-            transcript.pipeline_state["stages"]
-            .get("transcription", {})
-            .get("status") == "completed"
-        )
-        if transcription_done:
-            self._load_raw_transcript_from_disk(transcript)
+        # Skip in test_mode for the same isolation reason as above.
+        if not self.test_mode:
+            transcription_done = (
+                transcript.pipeline_state["stages"]
+                .get("transcription", {})
+                .get("status") == "completed"
+            )
+            if transcription_done:
+                self._load_raw_transcript_from_disk(transcript)
 
         # initialise any stages not already in the loaded state as pending.
         for name, _, _ in stages:

@@ -140,3 +140,4 @@ logs/
 metadata/
 scripts/
 .github/.DS_Store
+input/audiobooks/

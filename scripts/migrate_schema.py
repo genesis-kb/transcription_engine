@@ -5,8 +5,7 @@ import json
 import logging
 import argparse
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 from dotenv import load_dotenv
 
 # Load environment variables from .env
@@ -79,18 +78,53 @@ def run_migration(dry_run=False):
             # 4. Migrate Data
             logger.info("Migrating data from old_youtube_channels -> content_sources...")
             migrate_sources_sql = """
+                WITH source_rows AS (
+                    SELECT
+                        id,
+                        channel_name,
+                        channel_url,
+                        channel_id,
+                        category,
+                        priority,
+                        is_active,
+                        created_at,
+                        LOWER(REGEXP_REPLACE(channel_name, '[^a-zA-Z0-9]+', '-', 'g')) AS base_slug
+                    FROM old_youtube_channels
+                ),
+                deduped_source_rows AS (
+                    SELECT
+                        id,
+                        channel_name,
+                        channel_url,
+                        channel_id,
+                        category,
+                        priority,
+                        is_active,
+                        created_at,
+                        CASE
+                            WHEN COUNT(*) OVER (PARTITION BY base_slug) > 1 THEN base_slug || '-' || id
+                            ELSE base_slug
+                        END AS slug
+                    FROM source_rows
+                )
                 INSERT INTO content_sources (id, name, slug, source_type, base_url, config, is_active, last_run_status, created_at)
-                SELECT 
-                    id, 
-                    channel_name, 
-                    LOWER(REGEXP_REPLACE(channel_name, '[^a-zA-Z0-9]+', '-', 'g')), 
-                    'youtube', 
-                    channel_url, 
-                    jsonb_build_object('yt_channel_id', channel_id, 'category', category, 'priority', priority), 
-                    is_active, 
-                    NULL, 
+                SELECT
+                    id,
+                    channel_name,
+                    slug,
+                    'youtube',
+                    channel_url,
+                    jsonb_build_object('yt_channel_id', channel_id, 'category', category, 'priority', priority),
+                    is_active,
+                    NULL,
                     created_at
-                FROM old_youtube_channels;
+                FROM deduped_source_rows
+                ON CONFLICT (slug) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    base_url = EXCLUDED.base_url,
+                    config = EXCLUDED.config,
+                    is_active = EXCLUDED.is_active,
+                    created_at = EXCLUDED.created_at;
             """
             if not dry_run:
                 res = conn.execute(text(migrate_sources_sql))
@@ -136,14 +170,29 @@ def run_migration(dry_run=False):
                 manual_source_id = conn.execute(text("""
                     INSERT INTO content_sources (name, slug, source_type, is_active)
                     VALUES ('Manual Imports', 'manual-imports', 'manual', true)
+                    ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
                     RETURNING id;
                 """)).scalar()
 
-                transcripts = conn.execute(text("SELECT * FROM old_transcripts")).fetchall()
-                logger.info(f"Processing {len(transcripts)} old transcripts...")
+                total_transcripts = conn.execute(text("SELECT COUNT(*) FROM old_transcripts")).scalar()
+                logger.info(f"Processing {total_transcripts} old transcripts in batches...")
                 
+                def iter_transcripts():
+                    last_id = None
+                    batch_size = 100
+                    while True:
+                        if last_id is None:
+                            batch = conn.execute(text("SELECT * FROM old_transcripts ORDER BY id LIMIT :limit"), {"limit": batch_size}).fetchall()
+                        else:
+                            batch = conn.execute(text("SELECT * FROM old_transcripts WHERE id > :last_id ORDER BY id LIMIT :limit"), {"limit": batch_size, "last_id": last_id}).fetchall()
+                        if not batch:
+                            break
+                        for row in batch:
+                            yield row
+                        last_id = batch[-1].id
+
                 migrated_transcripts_count = 0
-                for t in transcripts:
+                for t in iter_transcripts():
                     t_id = t.id
                     raw = t.raw_text
                     corrected = t.corrected_text
@@ -164,17 +213,19 @@ def run_migration(dry_run=False):
                     
                     if not content_item_id:
                         ext_id = video_id if video_id else f"manual-{t_id}"
+                        db_url = t.media_url if t.media_url else None
                         row = conn.execute(text("""
                             INSERT INTO content_items (source_id, external_id, title, content_type, url, status)
                             VALUES (:s_id, :ext_id, :title, 'video', :url, 'transcribed')
                             ON CONFLICT (source_id, external_id) DO UPDATE SET title = EXCLUDED.title
                             RETURNING id;
-                        """), {"s_id": manual_source_id, "ext_id": ext_id, "title": t.title or 'Unknown', "url": t.media_url}).first()
+                        """), {"s_id": manual_source_id, "ext_id": ext_id, "title": t.title or 'Unknown', "url": db_url}).first()
                         content_item_id = row[0]
 
                     conn.execute(text("""
                         INSERT INTO transcripts (id, content_item_id, is_current, version, raw_text, corrected_text, created_at)
                         VALUES (:t_id, :ci_id, true, 1, :raw, :corr, :created_at)
+                        ON CONFLICT (id) DO NOTHING
                     """), {"t_id": t_id, "ci_id": content_item_id, "raw": raw, "corr": corrected, "created_at": t.created_at})
                     migrated_transcripts_count += 1
                     
@@ -218,6 +269,22 @@ def run_migration(dry_run=False):
             if not dry_run:
                 res = conn.execute(text(migrate_runs_sql))
                 logger.info(f"Migrated {res.rowcount} pipeline runs.")
+                
+                # Link sources to their latest pipeline runs (must run after pipeline_runs are populated)
+                update_last_run_sql = """
+                    UPDATE content_sources cs
+                    SET last_run_id = pr.id,
+                        last_run_status = pr.status
+                    FROM (
+                        SELECT id, source_id, status,
+                               ROW_NUMBER() OVER(PARTITION BY source_id ORDER BY started_at DESC) as rn
+                        FROM pipeline_runs
+                        WHERE source_id IS NOT NULL
+                    ) pr
+                    WHERE cs.id = pr.source_id AND pr.rn = 1;
+                """
+                conn.execute(text(update_last_run_sql))
+                logger.info("Linked content_sources to their latest pipeline runs.")
             else:
                 logger.info(f"DRY RUN: {migrate_runs_sql}")
 

@@ -234,10 +234,12 @@ class ContentItem(Base):
             else None,
         }
         if include_source and self.source:
+            source_config = self.source.config or {}
             d["content_source"] = {
                 "name": self.source.name,
                 "source_type": self.source.source_type,
                 "slug": self.source.slug,
+                "category": source_config.get("category", ""),
             }
         else:
             d["content_source"] = None
@@ -350,6 +352,9 @@ class Transcript(Base):
     )
 
     __table_args__ = (
+        UniqueConstraint(
+            "content_item_id", "version", name="uq_transcripts_content_item_version"
+        ),
         Index(
             "idx_single_active_transcript",
             "content_item_id",

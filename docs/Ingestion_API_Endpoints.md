@@ -160,8 +160,10 @@ Adds a **new** content source to monitor.
   ```
 - **Required Fields**: `name`, `slug`
 - **Optional Fields**: `source_type` (default: `youtube`), `base_url`, `config`, `is_active` (default: `true`)
-- **Success Response** (`200`): The created `ContentSource` object.
-- **Error Response** (`500`): Failed to add source.
+- **Success Response** (`200`):
+  ```json
+  { "status": "success", "data": { ...ContentSource object... } }
+  ```
 
 ---
 
@@ -178,7 +180,10 @@ Updates a monitored content source. Only the fields provided are updated.
     "config": { "priority": 2 }
   }
   ```
-- **Success Response** (`200`): The updated `ContentSource` object.
+- **Success Response** (`200`):
+  ```json
+  { "status": "success", "data": { ...ContentSource object... } }
+  ```
 - **Error Response** (`400`): No fields provided to update.
 - **Error Response** (`404`): Source not found.
 
@@ -263,7 +268,10 @@ Manually **approve or reject** an item, overriding the LLM classification.
   - `is_technical: true` → sets `technical_score = 5`, `status = "queued"`
   - `is_technical: false` → sets `technical_score = 1`, `status = "skipped"`
   - The `classification_reason` is stored inside `source_metadata.classification_reason`
-- **Success Response** (`200`): The updated `ContentItem` object.
+- **Success Response** (`200`):
+  ```json
+  { "status": "success", "data": { ...ContentItem object... } }
+  ```
 - **Error Response** (`404`): Item not found.
 
 ---
@@ -505,3 +513,4 @@ Extracts the direct streamable video URL from a YouTube link.
   { "status": "success", "video_url": "https://..." }
   ```
 - **Error Response** (`500`): Could not extract the video URL.
+

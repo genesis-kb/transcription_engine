@@ -168,8 +168,9 @@ class ChannelScanner:
 
             for item in details_response.get("items", []):
                 video_data = self._parse_video_details(item, channel_db_id)
-                self._db.insert_content_item(video_data)
-                videos_inserted += 1
+                result = self._db.insert_content_item(video_data)
+                if result:
+                    videos_inserted += 1
 
         self._db.update_source_last_scanned(channel_db_id)
         logger.info(

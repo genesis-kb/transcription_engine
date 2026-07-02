@@ -119,8 +119,9 @@ def run_migration(dry_run=False):
                     NULL,
                     created_at
                 FROM deduped_source_rows
-                ON CONFLICT (slug) DO UPDATE SET
+                ON CONFLICT (id) DO UPDATE SET
                     name = EXCLUDED.name,
+                    slug = EXCLUDED.slug,
                     base_url = EXCLUDED.base_url,
                     config = EXCLUDED.config,
                     is_active = EXCLUDED.is_active,
@@ -225,7 +226,7 @@ def run_migration(dry_run=False):
                     conn.execute(text("""
                         INSERT INTO transcripts (id, content_item_id, is_current, version, raw_text, corrected_text, created_at)
                         VALUES (:t_id, :ci_id, true, 1, :raw, :corr, :created_at)
-                        ON CONFLICT (id) DO NOTHING
+                        ON CONFLICT DO NOTHING
                     """), {"t_id": t_id, "ci_id": content_item_id, "raw": raw, "corr": corrected, "created_at": t.created_at})
                     migrated_transcripts_count += 1
                     
@@ -277,7 +278,7 @@ def run_migration(dry_run=False):
                         last_run_status = pr.status
                     FROM (
                         SELECT id, source_id, status,
-                               ROW_NUMBER() OVER(PARTITION BY source_id ORDER BY started_at DESC) as rn
+                               ROW_NUMBER() OVER(PARTITION BY source_id ORDER BY started_at DESC NULLS LAST, id DESC) as rn
                         FROM pipeline_runs
                         WHERE source_id IS NOT NULL
                     ) pr

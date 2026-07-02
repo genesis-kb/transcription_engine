@@ -80,7 +80,31 @@ def add_indexes():
                 )
         else:
             logger.info('Skipping optional PostgreSQL extension creation for "pg_trgm".')
-        
+
+        # Drop any invalid indexes left behind by previously failed CONCURRENTLY builds.
+        # Without this, IF NOT EXISTS silently skips broken indexes on re-runs.
+        index_names = []
+        for sql in index_sqls:
+            # Extract index name from "... IF NOT EXISTS <name> ON ..."
+            parts = sql.upper().split("IF NOT EXISTS")
+            if len(parts) == 2:
+                name = parts[1].strip().split()[0].strip().lower()
+                index_names.append(name)
+
+        if index_names:
+            placeholders = ", ".join(f"'{n}'" for n in index_names)
+            invalid_indexes = conn.execute(text(f"""
+                SELECT c.relname
+                FROM pg_class c
+                JOIN pg_index i ON c.oid = i.indexrelid
+                WHERE NOT i.indisvalid
+                  AND c.relname IN ({placeholders});
+            """)).fetchall()
+
+            for (idx_name,) in invalid_indexes:
+                logger.warning(f"Dropping invalid index from a previous failed build: {idx_name}")
+                conn.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {idx_name};"))
+
         for sql in index_sqls:
             logger.info(f"Executing: {sql.strip().split(chr(10))[0]}...")
             conn.execute(text(sql))

@@ -64,11 +64,12 @@ class DatabaseService:
                         content_source = session.query(ContentSource).filter_by(slug=source.loc).first()
                         
                     content_item = None
-                    if video_id:
-                        query = session.query(ContentItem).filter_by(external_id=video_id)
-                        if content_source:
-                            query = query.filter_by(source_id=content_source.id)
-                        content_item = query.first()
+                    if video_id and content_source:
+                        content_item = (
+                            session.query(ContentItem)
+                            .filter_by(external_id=video_id, source_id=content_source.id)
+                            .first()
+                        )
                     
                     if not content_item:
                         if content_source:

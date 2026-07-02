@@ -157,7 +157,7 @@ class ContentItem(Base):
     title = Column(Text, nullable=False)
     description = Column(Text)
     content_type = Column(Text, nullable=False)  # 'video', 'audio', 'text'
-    url = Column(Text, unique=True)
+    url = Column(Text)
     published_at = Column(DateTime(timezone=True))
     event_date = Column(Date)
     event_id = Column(UUID(as_uuid=True), ForeignKey("taxonomies.id"))

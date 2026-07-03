@@ -17,7 +17,14 @@ def upload_to_supabase(file_path: Path, bucket_name: str, destination_path: str)
         logger.warning("SUPABASE_URL or SUPABASE_KEY not set. Cannot upload to Supabase.")
         return None
         
-    safe_destination = urllib.parse.quote(destination_path)
+    normalized_path = "/".join(
+        p
+        for p in destination_path.replace("\\", "/").lstrip("/").split("/")
+        if p and p not in (".", "..")
+    )
+    if not normalized_path:
+        raise ValueError("destination_path resolves to an empty object key.")
+    safe_destination = urllib.parse.quote(normalized_path, safe="/")
     url = f"{supabase_url.rstrip('/')}/storage/v1/object/{bucket_name}/{safe_destination}"
     mime_type, _ = mimetypes.guess_type(str(file_path))
     

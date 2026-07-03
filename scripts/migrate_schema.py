@@ -120,11 +120,11 @@ def run_migration(dry_run=False):
                     created_at
                 FROM deduped_source_rows
                 ON CONFLICT (slug) DO UPDATE SET
+                    id = EXCLUDED.id,
                     name = EXCLUDED.name,
                     base_url = EXCLUDED.base_url,
                     config = EXCLUDED.config,
-                    is_active = EXCLUDED.is_active,
-                    created_at = EXCLUDED.created_at;
+                    is_active = EXCLUDED.is_active;
             """
             if not dry_run:
                 res = conn.execute(text(migrate_sources_sql))
@@ -221,6 +221,10 @@ def run_migration(dry_run=False):
                             RETURNING id;
                         """), {"s_id": manual_source_id, "ext_id": ext_id, "title": t.title or 'Unknown', "url": db_url}).first()
                         content_item_id = row[0]
+
+                    existing = conn.execute(text("SELECT id FROM transcripts WHERE content_item_id = :ci_id"), {"ci_id": content_item_id}).first()
+                    if existing:
+                        continue
 
                     conn.execute(text("""
                         INSERT INTO transcripts (id, content_item_id, is_current, version, raw_text, corrected_text, created_at)

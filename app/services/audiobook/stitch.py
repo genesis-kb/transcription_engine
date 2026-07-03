@@ -6,6 +6,19 @@ from pydub import AudioSegment
 def _seg(audio: bytes, fmt: str) -> AudioSegment:
     return AudioSegment.from_file(io.BytesIO(audio), format=fmt)
 
+
+def _coerce_params(seg: AudioSegment, reference: AudioSegment) -> AudioSegment:
+    """Coerce an AudioSegment's sample rate, channels, and sample width
+    to match *reference* so raw-byte concatenation is safe."""
+    if seg.frame_rate != reference.frame_rate:
+        seg = seg.set_frame_rate(reference.frame_rate)
+    if seg.channels != reference.channels:
+        seg = seg.set_channels(reference.channels)
+    if seg.sample_width != reference.sample_width:
+        seg = seg.set_sample_width(reference.sample_width)
+    return seg
+
+
 def build_chapter(chunks: list[bytes], cfg: dict[str, Any]) -> AudioSegment:
     if not chunks:
         return AudioSegment.empty()
@@ -20,8 +33,9 @@ def build_chapter(chunks: list[bytes], cfg: dict[str, Any]) -> AudioSegment:
     
     segments = [first]
     for c in chunks[1:]:
+        chunk_seg = _coerce_params(_seg(c, fmt), first)
         segments.append(gap)
-        segments.append(_seg(c, fmt))
+        segments.append(chunk_seg)
         
     return first._spawn(b"".join(s.raw_data for s in segments))
 
@@ -47,6 +61,7 @@ def export_book(chapters: list[AudioSegment], cfg: dict[str, Any], out_path: Pat
     
     segments = [first]
     for ch in chapters[1:]:
+        ch = _coerce_params(ch, first)
         segments.append(gap)
         segments.append(ch)
         

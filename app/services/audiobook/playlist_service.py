@@ -136,8 +136,9 @@ class PlaylistService:
             )
             if not pl:
                 return None
+            ALLOWED_UPDATES = {"title", "description", "cover_image_url", "tags", "status"}
             for key, value in updates.items():
-                if hasattr(pl, key):
+                if key in ALLOWED_UPDATES and hasattr(pl, key):
                     setattr(pl, key, value)
             pl.updated_at = datetime.now(timezone.utc)
             session.commit()

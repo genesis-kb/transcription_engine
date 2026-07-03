@@ -14,8 +14,8 @@ Usage:
     python curate_audiobooks.py --provider smallest
 """
 import argparse
-import json
 import sys
+from pathlib import Path
 
 from app.services.audiobook.curator import AudiobookCurator
 
@@ -53,6 +53,12 @@ def main():
         help="Enable dynamic multi-speaker diarization",
     )
     args = parser.parse_args()
+
+    # Validate input directory before proceeding
+    input_path = Path(args.input_dir)
+    if not input_path.is_dir():
+        print(f"\n  ✗ Input directory does not exist: {input_path}")
+        sys.exit(1)
 
     print(f"{'='*60}")
     print(f"  Audiobook Curation Pipeline")

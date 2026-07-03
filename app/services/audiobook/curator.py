@@ -229,11 +229,14 @@ class AudiobookCurator:
             tags=inp.tags,
         )
 
-        seq = self._playlists.get_next_sequence_number(playlist["id"])
+        # Single-article playlists always have exactly one episode at
+        # sequence_number=1.  Using a fixed number ensures reruns are
+        # idempotent — find_or_create_episode will return the existing
+        # record instead of creating a duplicate.
         episode, created = self._playlists.find_or_create_episode(
             playlist_id=playlist["id"],
             title=inp.title,
-            sequence_number=seq,
+            sequence_number=1,
             source_url=inp.source_url,
             description=inp.description,
             metadata={

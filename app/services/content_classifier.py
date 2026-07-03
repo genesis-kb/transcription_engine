@@ -130,7 +130,11 @@ class ContentClassifier:
         # Get channel info from joined data
         source_info = item.get("content_source") or {}
         channel_name = source_info.get("name", "")
-        channel_category = source_info.get("category", source_info.get("slug", "unknown"))
+        channel_category = (
+            source_info.get("category")
+            or source_info.get("slug")
+            or "unknown"
+        )
 
         title = item.get("title", "")
         description = item.get("description", "")

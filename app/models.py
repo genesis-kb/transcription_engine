@@ -559,6 +559,8 @@ class AudioPlaylist(Base):
     __table_args__ = (
         Index("idx_playlists_status", "status"),
         Index("idx_playlists_type", "playlist_type"),
+        CheckConstraint("total_duration_seconds >= 0", name="ck_playlists_duration"),
+        CheckConstraint("episode_count >= 0", name="ck_playlists_ep_count"),
     )
 
     def to_dict(self, include_episodes=False):
@@ -628,6 +630,8 @@ class AudioEpisode(Base):
         ),
         Index("idx_episodes_playlist", "playlist_id"),
         Index("idx_episodes_status", "status"),
+        CheckConstraint("sequence_number >= 0", name="ck_episodes_sequence_number"),
+        CheckConstraint("duration_seconds >= 0", name="ck_episodes_duration"),
     )
 
     def to_dict(self):

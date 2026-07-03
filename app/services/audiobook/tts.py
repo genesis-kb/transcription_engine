@@ -37,12 +37,14 @@ class TTSProvider(ABC):
 
 class DeepgramTTS(TTSProvider):
     name = "deepgram"
-    supported_formats = {"mp3", "wav", "linear16"}
+    supported_formats = {"mp3", "wav"}
 
     def synthesize(self, text: str) -> bytes:
         text = self.apply_lexicon_fallback(text)
-        _MIME = {"mp3": "audio/mpeg", "wav": "audio/wav", "linear16": "audio/wav"}
+        _MIME = {"mp3": "audio/mpeg", "wav": "audio/wav"}
         params = {"model": self.voice, "encoding": "mp3" if self.fmt == "mp3" else "linear16"}
+        if self.fmt == "wav":
+            params["container"] = "wav"
         headers = {
             "Authorization": f"Token {self.api_key}",
             "Content-Type": "application/json",
@@ -55,11 +57,11 @@ class DeepgramTTS(TTSProvider):
 
 class SmallestTTS(TTSProvider):
     name = "smallest"
-    supported_formats = {"mp3", "wav", "pcm"}
+    supported_formats = {"mp3", "wav"}
 
     def synthesize(self, text: str) -> bytes:
         text = self.apply_lexicon_fallback(text)
-        _ACCEPT = {"mp3": "audio/mpeg", "wav": "audio/wav", "pcm": "audio/pcm"}
+        _ACCEPT = {"mp3": "audio/mpeg", "wav": "audio/wav"}
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",

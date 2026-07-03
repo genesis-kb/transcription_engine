@@ -8,6 +8,7 @@ Usage:
     python generate_audiobook.py sample_bitcoin.txt --skip-llm
 """
 import argparse
+import sys
 
 from app.services.audiobook_service import AudiobookService
 
@@ -35,7 +36,7 @@ def main():
             text = f.read()
     except FileNotFoundError:
         print(f"❌ Error: File '{args.input}' not found.")
-        return
+        sys.exit(1)
 
     print("Initializing Audiobook Service...")
     service = AudiobookService()
@@ -53,6 +54,7 @@ def main():
         print(f"Duration: {result['duration_seconds']}s")
     else:
         print("\n❌ Failed to generate audiobook.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

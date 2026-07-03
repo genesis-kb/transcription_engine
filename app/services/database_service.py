@@ -63,30 +63,27 @@ class DatabaseService:
                     if hasattr(source, "loc") and source.loc:
                         content_source = session.query(ContentSource).filter_by(slug=source.loc).first()
                         
+                    if content_source:
+                        target_source_id = content_source.id
+                    else:
+                        # Find or create manual source
+                        manual_source = session.query(ContentSource).filter_by(slug='manual-imports').first()
+                        if not manual_source:
+                            manual_source = ContentSource(
+                                name='Manual Imports',
+                                slug='manual-imports',
+                                source_type='manual',
+                                is_active=True
+                            )
+                            session.add(manual_source)
+                            session.flush()
+                        target_source_id = manual_source.id
+                        
                     content_item = None
                     if video_id:
-                        query = session.query(ContentItem).filter_by(external_id=video_id)
-                        if content_source:
-                            query = query.filter_by(source_id=content_source.id)
-                        content_item = query.first()
+                        content_item = session.query(ContentItem).filter_by(external_id=video_id, source_id=target_source_id).first()
                     
                     if not content_item:
-                        if content_source:
-                            target_source_id = content_source.id
-                        else:
-                            # Find or create manual source
-                            manual_source = session.query(ContentSource).filter_by(slug='manual-imports').first()
-                            if not manual_source:
-                                manual_source = ContentSource(
-                                    name='Manual Imports',
-                                    slug='manual-imports',
-                                    source_type='manual',
-                                    is_active=True
-                                )
-                                session.add(manual_source)
-                                session.flush()
-                            target_source_id = manual_source.id
-
                         ext_id = video_id if video_id else f"manual-{uuid.uuid4().hex[:12]}"
                         
                         content_item = session.query(ContentItem).filter_by(source_id=target_source_id, external_id=ext_id).first()

@@ -5,6 +5,7 @@ Endpoints:
     GET /audiobooks/playlists/{slug}            — single playlist + episodes
     GET /audiobooks/episodes/{episode_id}       — single episode
 """
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -79,6 +80,11 @@ def get_playlist(slug: str):
                 status_code=404,
                 detail=f"Playlist '{slug}' not found.",
             )
+            
+        for ep in (playlist.get("episodes") or []):
+            if ep.get("status") != "completed":
+                ep["audio_url"] = None
+                
         return {"data": playlist}
     except HTTPException:
         raise
@@ -92,13 +98,13 @@ def get_playlist(slug: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/episodes/{episode_id}")
-def get_episode(episode_id: str):
+def get_episode(episode_id: uuid.UUID):
     """Get a single episode by UUID.
 
     Useful for deep-linking directly to a specific episode.
     """
     try:
-        episode = _service().get_episode_by_id(episode_id)
+        episode = _service().get_episode_by_id(str(episode_id))
         if not episode:
             raise HTTPException(
                 status_code=404,

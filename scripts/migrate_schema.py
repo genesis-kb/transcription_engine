@@ -120,7 +120,6 @@ def run_migration(dry_run=False):
                     created_at
                 FROM deduped_source_rows
                 ON CONFLICT (slug) DO UPDATE SET
-                    id = EXCLUDED.id,
                     name = EXCLUDED.name,
                     base_url = EXCLUDED.base_url,
                     config = EXCLUDED.config,

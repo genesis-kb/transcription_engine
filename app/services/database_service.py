@@ -87,6 +87,10 @@ class DatabaseService:
                         ext_id = video_id if video_id else f"manual-{uuid.uuid4().hex[:12]}"
                         
                         content_item = session.query(ContentItem).filter_by(source_id=target_source_id, external_id=ext_id).first()
+                        if not content_item and media_url:
+                            # URL fallback to avoid global unique constraint
+                            content_item = session.query(ContentItem).filter_by(url=media_url).first()
+                            
                         if not content_item:
                             content_item = ContentItem(
                                 source_id=target_source_id,

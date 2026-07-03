@@ -6,6 +6,8 @@ from unittest.mock import MagicMock
 from routes.audiobooks import router
 from fastapi import FastAPI
 
+pytestmark = pytest.mark.integration
+
 app = FastAPI()
 app.include_router(router, prefix="/audiobooks")
 

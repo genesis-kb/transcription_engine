@@ -106,7 +106,7 @@ Files with no `---` block are automatically treated as a single article. The fil
 ### Full pipeline (recommended)
 
 ```bash
-python curate_audiobooks.py
+python -m app.services.audiobook.curator
 ```
 
 Reads all `.txt` files from `input/audiobooks/`, runs LLM chapterization on articles over 5,000 words, generates audio, and saves everything to the database.
@@ -115,23 +115,23 @@ Reads all `.txt` files from `input/audiobooks/`, runs LLM chapterization on arti
 
 ```bash
 # Skip the OpenAI rewrite step (faster and cheaper)
-python curate_audiobooks.py --skip-llm
+python -m app.services.audiobook.curator --skip-llm
 
 # Point at a specific directory (avoids re-processing other files)
-python curate_audiobooks.py --input-dir input/audiobooks/networking
+python -m app.services.audiobook.curator --input-dir input/audiobooks/networking
 
 # Override TTS provider
-python curate_audiobooks.py --provider smallest
-python curate_audiobooks.py --provider deepgram
+python -m app.services.audiobook.curator --provider smallest
+python -m app.services.audiobook.curator --provider deepgram
 
 # Enable multi-speaker diarization
-python curate_audiobooks.py --diarize
+python -m app.services.audiobook.curator --diarize
 
 # Combine flags
-python curate_audiobooks.py --input-dir input/audiobooks/networking --skip-llm --provider smallest
+python -m app.services.audiobook.curator --input-dir input/audiobooks/networking --skip-llm --provider smallest
 
 # Change the word count threshold for LLM chapterization (default: 5000)
-python curate_audiobooks.py --threshold 3000
+python -m app.services.audiobook.curator --threshold 3000
 ```
 
 > **Tip:** Use `--input-dir` to target a specific subfolder when you only want to process new files. This prevents the pipeline from re-scanning (and potentially re-trying) unrelated files.

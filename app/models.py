@@ -557,6 +557,22 @@ class AudioPlaylist(Base):
     )
 
     __table_args__ = (
+        CheckConstraint(
+            "playlist_type IN ('series', 'collection')",
+            name="ck_playlist_type_valid",
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'published', 'archived')",
+            name="ck_playlist_status_valid",
+        ),
+        CheckConstraint(
+            "total_duration_seconds >= 0",
+            name="ck_playlist_duration_nonneg",
+        ),
+        CheckConstraint(
+            "episode_count >= 0",
+            name="ck_playlist_episode_count_nonneg",
+        ),
         Index("idx_playlists_status", "status"),
         Index("idx_playlists_type", "playlist_type"),
     )
@@ -625,6 +641,18 @@ class AudioEpisode(Base):
             "playlist_id",
             "sequence_number",
             name="uq_episodes_playlist_sequence",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'generating', 'completed', 'failed')",
+            name="ck_episode_status_valid",
+        ),
+        CheckConstraint(
+            "sequence_number >= 0",
+            name="ck_episode_sequence_nonneg",
+        ),
+        CheckConstraint(
+            "duration_seconds IS NULL OR duration_seconds >= 0",
+            name="ck_episode_duration_nonneg",
         ),
         Index("idx_episodes_playlist", "playlist_id"),
         Index("idx_episodes_status", "status"),

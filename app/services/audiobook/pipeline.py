@@ -120,7 +120,8 @@ class AudioPipeline:
         clean_txt = clean_text(text, retain_speakers=diarize)
 
         # Step 2: Optionally rewrite via LLM
-        if skip_llm:
+        # Diarized input must skip LLM rewrite to preserve speaker tags
+        if skip_llm or diarize:
             manifest = {
                 "title": title,
                 "chapters": [{"title": title, "text": clean_txt}],
@@ -176,7 +177,7 @@ class AudioPipeline:
             audio_chunks = []
             for spk_chunk in speaker_chunks:
                 speaker = spk_chunk["speaker"]
-                spoken = normalize(spk_chunk["text"])
+                spoken = normalize(spk_chunk["text"], lexicon=self.lexicon)
                 pieces = chunk_split(spoken, cap)
                 
                 original_voice = provider.voice

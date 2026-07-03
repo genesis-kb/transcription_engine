@@ -16,6 +16,25 @@ from app.database import _get_engine
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
+def _drop_invalid_indexes(conn):
+    """Detect and drop indexes left in an invalid state by interrupted CONCURRENTLY builds.
+
+    A failed or interrupted CREATE INDEX CONCURRENTLY leaves an invalid
+    same-name index that future IF NOT EXISTS runs will silently skip,
+    so the expected performance index never becomes usable.
+    """
+    invalid = conn.execute(text("""
+        SELECT c.relname AS index_name
+        FROM pg_index i
+        JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE NOT i.indisvalid;
+    """)).fetchall()
+    for row in invalid:
+        idx_name = row[0]
+        logger.warning(f"Dropping invalid index: {idx_name}")
+        conn.execute(text(f'DROP INDEX CONCURRENTLY IF EXISTS "{idx_name}";'))
+
+
 def add_indexes():
     engine = _get_engine()
     if not engine:
@@ -80,6 +99,9 @@ def add_indexes():
                 )
         else:
             logger.info('Skipping optional PostgreSQL extension creation for "pg_trgm".')
+
+        # Drop any indexes left in an invalid state by prior interrupted builds
+        _drop_invalid_indexes(conn)
         
         for sql in index_sqls:
             logger.info(f"Executing: {sql.strip().split(chr(10))[0]}...")

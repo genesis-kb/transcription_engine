@@ -1,6 +1,6 @@
 # Audiobook Pipeline — Architecture & Step-by-Step Internals
 
-This document explains what happens inside the pipeline from the moment you run `python curate_audiobooks.py` to the moment a playable audio URL lands in the database.
+This document explains what happens inside the pipeline from the moment you run `python -m app.services.audiobook.curator` to the moment a playable audio URL lands in the database.
 
 ---
 
@@ -223,6 +223,11 @@ audio:
   silence_ms_between_chunks: 220
   silence_ms_between_chapters: 700
   target_dbfs: -20.0            # loudness normalization target
+
+paths:
+  output_dir: output            # base directory for generated audio files
+  cache_dir: .cache             # TTS response cache directory
+  lexicon: audiobook_lexicon.json  # pronunciation overrides file
 ```
 
 **`app/services/audiobook_lexicon.json`**
@@ -252,4 +257,4 @@ The pipeline is designed to be safely re-run at any time:
 - **`pending` / `failed` episodes** → re-attempted.
 - **TTS cache** → chunk bytes cached by content hash. Unchanged text costs zero API calls.
 
-This means you can safely run `python curate_audiobooks.py` multiple times and only genuinely new or failed work will be processed.
+This means you can safely run `python -m app.services.audiobook.curator` multiple times and only genuinely new or failed work will be processed.

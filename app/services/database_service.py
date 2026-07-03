@@ -68,7 +68,15 @@ class DatabaseService:
                         query = session.query(ContentItem).filter_by(external_id=video_id)
                         if content_source:
                             query = query.filter_by(source_id=content_source.id)
+                        else:
+                            # Without a known source, scope to avoid cross-source collisions
+                            query = query.filter_by(source_id=None)
                         content_item = query.first()
+                        # Fallback: if source-scoped lookup found nothing, try any source
+                        if not content_item and content_source:
+                            content_item = session.query(ContentItem).filter_by(
+                                external_id=video_id, source_id=content_source.id
+                            ).first()
                     
                     if not content_item:
                         if content_source:
@@ -140,6 +148,9 @@ class DatabaseService:
                         from app.utils import slugify
                         for spk_name in source.speakers:
                             spk_slug = slugify(spk_name)
+                            if not spk_slug:
+                                import uuid as _uuid
+                                spk_slug = f"speaker-{_uuid.uuid4().hex[:8]}"
                             spk = session.query(Speaker).filter_by(slug=spk_slug).first()
                             if not spk:
                                 spk = Speaker(name=spk_name, slug=spk_slug)

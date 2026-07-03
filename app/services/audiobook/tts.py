@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import requests
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 import re
 
 class TTSProvider(ABC):

@@ -92,7 +92,17 @@ def _expand_acronym(m: re.Match) -> str:
         expanded += "-s"
     return expanded
 
-def normalize(text: str) -> str:
+def normalize(text: str, lexicon: dict[str, str] | None = None) -> str:
+    # Apply lexicon substitutions first so configured overrides
+    # (e.g. BTC, ETH, KYC) are not clobbered by generic acronym expansion.
+    if lexicon:
+        import re as _re
+        for key in sorted(lexicon, key=len, reverse=True):
+            if key.startswith("_"):
+                continue
+            pattern = _re.compile(rf"\b{_re.escape(key)}\b", _re.IGNORECASE)
+            text = pattern.sub(lexicon[key], text)
+
     text = MONEY.sub(_expand_money, text)
     
     if num2words:

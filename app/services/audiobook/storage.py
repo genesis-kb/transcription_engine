@@ -17,11 +17,12 @@ def upload_to_supabase(file_path: Path, bucket_name: str, destination_path: str)
         logger.warning("SUPABASE_URL or SUPABASE_KEY not set. Cannot upload to Supabase.")
         return None
         
-    normalized_path = "/".join(
-        p
-        for p in destination_path.replace("\\", "/").lstrip("/").split("/")
-        if p and p not in (".", "..")
-    )
+    segments = destination_path.replace("\\", "/").lstrip("/").split("/")
+    for p in segments:
+        if p in (".", ".."):
+            raise ValueError(f"Invalid path segment '{p}' in destination_path.")
+            
+    normalized_path = "/".join(p for p in segments if p)
     if not normalized_path:
         raise ValueError("destination_path resolves to an empty object key.")
     safe_destination = urllib.parse.quote(normalized_path, safe="/")

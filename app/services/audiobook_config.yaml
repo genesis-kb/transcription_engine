@@ -23,6 +23,6 @@ audio:
   target_dbfs: -20.0      # simple loudness normalization target
 
 paths:
-  output_dir: output
-  cache_dir: .cache
+  output_dir: outputs/audiobooks
+  cache_dir: .cache/audiobooks
   lexicon: audiobook_lexicon.json

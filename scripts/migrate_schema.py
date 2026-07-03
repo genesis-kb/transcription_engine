@@ -220,12 +220,13 @@ def run_migration(dry_run=False):
                         """), {"s_id": manual_source_id, "ext_id": ext_id, "title": t.title or 'Unknown', "url": db_url}).first()
                         content_item_id = row[0]
 
-                    conn.execute(text("""
+                    res = conn.execute(text("""
                         INSERT INTO transcripts (id, content_item_id, is_current, version, raw_text, corrected_text, created_at)
                         VALUES (:t_id, :ci_id, true, 1, :raw, :corr, :created_at)
                         ON CONFLICT (id) DO NOTHING
                     """), {"t_id": t_id, "ci_id": content_item_id, "raw": raw, "corr": corrected, "created_at": t.created_at})
-                    migrated_transcripts_count += 1
+                    if res.rowcount:
+                        migrated_transcripts_count += 1
                     
                     if summary:
                         conn.execute(text("""

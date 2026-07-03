@@ -162,7 +162,7 @@ class DatabaseService:
                                 cis = ContentItemSpeaker(content_item_id=content_item.id, speaker_id=spk.id, role='speaker')
                                 session.add(cis)
 
-                    session.commit()
+                    # commit handled by get_session() context manager
                     return t.to_dict()
             except IntegrityError:
                 if attempt < 2:

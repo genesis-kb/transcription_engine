@@ -305,8 +305,8 @@ class AudiobookCurator:
             playlist_title = playlist["title"] if playlist else "Unknown"
             
             # Use same path format as manual seeds: audiobooks/Playlist_Title/Episode_Title.mp3
-            safe_pl_title = "".join(c if c.isalnum() or c in " _-" else "" for c in playlist_title).strip()
-            safe_ep_title = "".join(c if c.isalnum() or c in " _-" else "" for c in episode["title"]).replace(" ", "_")
+            safe_pl_title = "".join(c if c.isalnum() or c in " _-" else "" for c in playlist_title).strip() or "playlist"
+            safe_ep_title = "".join(c if c.isalnum() or c in " _-" else "" for c in episode["title"]).replace(" ", "_").strip("_") or episode_id
             ext = result.audio_path.suffix
             destination_path = f"{safe_pl_title}/{safe_ep_title}{ext}"
             

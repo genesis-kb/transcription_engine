@@ -235,6 +235,8 @@ class ContentItem(Base):
         }
         if include_source and self.source:
             source_config = self.source.config or {}
+            if not isinstance(source_config, dict):
+                source_config = {}
             d["content_source"] = {
                 "name": self.source.name,
                 "source_type": self.source.source_type,

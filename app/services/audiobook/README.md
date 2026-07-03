@@ -16,6 +16,7 @@ app/services/audiobook/
 ├── textproc.py           # Text cleaning, normalization, chunking
 ├── tts.py                # TTS providers (Deepgram, Smallest AI)
 ├── stitch.py             # Audio stitching + loudness normalization
+├── storage.py            # Supabase upload utility for audio files
 └── README.md             # This file
 ```
 

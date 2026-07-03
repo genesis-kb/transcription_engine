@@ -173,7 +173,7 @@ This cache means re-running the pipeline after a crash is fast — only uncached
 
 If `SUPABASE_URL` and `SUPABASE_KEY` are set:
 - POSTs the MP3 file to `<SUPABASE_URL>/storage/v1/object/audiobooks/<Safe Playlist Title>/<Safe Episode Title>.mp3` (with special characters and slashes removed to prevent path traversal).
-- If a duplicate is detected (HTTP 400), retries with PUT to overwrite.
+- Uses the `x-upsert: true` header to automatically overwrite any existing file at the destination path.
 - Returns the public URL on success; returns `None` and logs a warning on failure.
 
 The curator uses the public URL as `audio_url` if the upload succeeded, otherwise falls back to the local absolute path.

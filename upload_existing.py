@@ -7,6 +7,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.database import get_session
 from app.models import AudioEpisode, AudioPlaylist
+from sqlalchemy.orm import joinedload
 from app.services.audiobook.storage import upload_to_supabase
 from app.logging import get_logger
 
@@ -19,7 +20,7 @@ def main():
 
     with get_session() as session:
         # Find all episodes that have local paths (not remote URLs)
-        episodes = session.query(AudioEpisode).filter(
+        episodes = session.query(AudioEpisode).options(joinedload(AudioEpisode.playlist)).filter(
             AudioEpisode.audio_url.isnot(None),
             ~AudioEpisode.audio_url.like('http://%'),
             ~AudioEpisode.audio_url.like('https://%'),
@@ -37,12 +38,15 @@ def main():
                 logger.warning(f"File not found: {local_path}. Skipping.")
                 continue
                 
-            playlist = session.query(AudioPlaylist).filter_by(id=ep.playlist_id).first()
-            playlist_title = playlist.title if playlist else "Unknown"
+            playlist_title = ep.playlist.title if ep.playlist else "Unknown"
+            safe_pl_title = (
+                "".join(c if c.isalnum() or c in " _-" else "" for c in playlist_title).strip()
+                or "Unknown"
+            )
             
             safe_ep_title = "".join(c if c.isalnum() or c in " _-" else "" for c in ep.title).replace(" ", "_")
             ext = local_path.suffix
-            destination_path = f"{playlist_title}/{safe_ep_title}{ext}"
+            destination_path = f"{safe_pl_title}/{safe_ep_title}{ext}"
             
             logger.info(f"Uploading {ep.title} to {destination_path}...")
             public_url = upload_to_supabase(local_path, "audiobooks", destination_path)

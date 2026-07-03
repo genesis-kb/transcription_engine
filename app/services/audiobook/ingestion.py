@@ -103,6 +103,13 @@ def parse_file(filepath: Path) -> Optional[InputFile]:
         logger.error(f"Invalid YAML frontmatter in {filepath.name}: {e}")
         return None
 
+    if not isinstance(meta, dict):
+        logger.warning(
+            f"YAML frontmatter in {filepath.name} is not a mapping "
+            f"(got {type(meta).__name__}), treating as single_article"
+        )
+        meta = {}
+
     body = raw[match.end():].strip()
     if not body:
         logger.warning(f"Empty body in {filepath.name}, skipping")

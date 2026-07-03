@@ -9,6 +9,10 @@ A step-by-step guide to run the project locally, initialize the database, and qu
 - Python 3.10+
 - A running PostgreSQL database (e.g. [Supabase](https://supabase.com))
 - A Google / YouTube API key
+- FFmpeg installed on the system PATH (required by `pydub` and `media_processor.py`)
+  - **Ubuntu/Debian**: `sudo apt install ffmpeg`
+  - **Mac**: `brew install ffmpeg`
+  - **Windows**: `winget install Gyan.FFmpeg`
 
 ---
 

@@ -66,7 +66,9 @@ def rewrite(text: str, cfg: dict[str, Any]) -> dict[str, Any]:
             text_val = str(text_val)
         if not title.strip():
             continue
-        valid_chapters.append({"title": title.strip(), "text": text_val})
+        if not text_val.strip():
+            continue
+        valid_chapters.append({"title": title.strip(), "text": text_val.strip()})
             
     manifest["chapters"] = valid_chapters
     return manifest

@@ -59,16 +59,16 @@ Place `.txt` files in `input/audiobooks/`. Each file needs YAML frontmatter at t
 **Step 5: Run the Curation Pipeline**
 ```bash
 # Full pipeline (with LLM rewrite for long articles)
-python curate_audiobooks.py
+python -m app.services.audiobook.curator
 
 # Skip LLM rewrite (faster, cheaper — straight to TTS)
-python curate_audiobooks.py --skip-llm
+python -m app.services.audiobook.curator --skip-llm
 
 # Use a specific TTS provider
-python curate_audiobooks.py --provider smallest
+python -m app.services.audiobook.curator --provider smallest
 
 # Custom input directory
-python curate_audiobooks.py --input-dir path/to/files
+python -m app.services.audiobook.curator --input-dir path/to/files
 ```
 
 ## 📄 Input File Format

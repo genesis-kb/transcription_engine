@@ -184,27 +184,28 @@ class AudiobookCurator:
         )
 
         generated = 0
-        for inp in files:
-            episode, created = self._playlists.find_or_create_episode(
-                playlist_id=playlist["id"],
-                title=inp.title,
-                sequence_number=inp.sequence_number,
-                source_url=inp.source_url,
-                description=inp.description,
-                metadata={
-                    "author": inp.author,
-                    "word_count": inp.word_count,
-                    "source_file": inp.filepath.name,
-                },
-            )
+        try:
+            for inp in files:
+                episode, created = self._playlists.find_or_create_episode(
+                    playlist_id=playlist["id"],
+                    title=inp.title,
+                    sequence_number=inp.sequence_number,
+                    source_url=inp.source_url,
+                    description=inp.description,
+                    metadata={
+                        "author": inp.author,
+                        "word_count": inp.word_count,
+                        "source_file": inp.filepath.name,
+                    },
+                )
 
-            # Series episodes are already logically divided — no LLM
-            if self._generate_and_update(
-                episode, inp.body, skip_llm=True
-            ):
-                generated += 1
-
-        self._playlists.refresh_playlist_stats(playlist["id"])
+                # Series episodes are already logically divided — no LLM
+                if self._generate_and_update(
+                    episode, inp.body, skip_llm=True
+                ):
+                    generated += 1
+        finally:
+            self._playlists.refresh_playlist_stats(playlist["id"])
         return {"episodes": generated}
 
     # ------------------------------------------------------------------
@@ -350,3 +351,27 @@ class AudiobookCurator:
             "errors": errors,
             "success": len(errors) == 0,
         }
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Audiobook curation pipeline")
+    parser.add_argument(
+        "--input-dir", default="input/audiobooks",
+        help="Directory containing .txt input files (default: input/audiobooks)",
+    )
+    parser.add_argument("--skip-llm", action="store_true", help="Skip LLM rewrite step")
+    parser.add_argument("--provider", default=None, help="Force a specific TTS provider (deepgram | smallest)")
+    parser.add_argument("--diarize", action="store_true", help="Parse speaker tags and assign dynamic voices")
+    parser.add_argument("--threshold", type=int, default=DEFAULT_CHAPTERIZE_THRESHOLD, help="Word-count threshold for LLM chapterization")
+    args = parser.parse_args()
+
+    curator = AudiobookCurator(
+        chapterize_threshold=args.threshold,
+        skip_llm=args.skip_llm,
+        provider_override=args.provider,
+        diarize=args.diarize,
+    )
+    result = curator.curate_from_directory(args.input_dir)
+    print(result)

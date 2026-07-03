@@ -120,11 +120,9 @@ def run_migration(dry_run=False):
                     created_at
                 FROM deduped_source_rows
                 ON CONFLICT (slug) DO UPDATE SET
-                    name = EXCLUDED.name,
                     base_url = EXCLUDED.base_url,
-                    config = EXCLUDED.config,
-                    is_active = EXCLUDED.is_active,
-                    created_at = EXCLUDED.created_at;
+                    config = content_sources.config || EXCLUDED.config,
+                    is_active = EXCLUDED.is_active;
             """
             if not dry_run:
                 res = conn.execute(text(migrate_sources_sql))

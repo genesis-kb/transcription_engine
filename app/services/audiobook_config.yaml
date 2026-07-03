@@ -2,7 +2,6 @@ llm:
   provider: openai
   model: gpt-4.1          # rewrite/chapterize model
   temperature: 0.3
-  max_words_per_request: 2500   # split long input before sending to the LLM
 
 tts:
   provider: deepgram      # deepgram | smallest  (switch to A/B your credits)
@@ -24,7 +23,6 @@ audio:
   target_dbfs: -20.0      # simple loudness normalization target
 
 paths:
-  input_dir: input
   output_dir: output
   cache_dir: .cache
   lexicon: audiobook_lexicon.json

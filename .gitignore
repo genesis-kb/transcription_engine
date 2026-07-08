@@ -135,8 +135,8 @@ dmypy.json
 .username
 .idea
 output/
+outputs/
 test_feats/
 logs/
 metadata/
-scripts/
-.github/.DS_Store
+input/audiobooks/

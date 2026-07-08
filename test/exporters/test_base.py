@@ -7,7 +7,7 @@ from app.exporters import TranscriptExporter
 
 
 # Create concrete subclass for testing abstract base class
-class TestableExporter(TranscriptExporter):
+class DummyExporter(TranscriptExporter):
     """Concrete implementation of TranscriptExporter for testing"""
 
     def export(self, transcript, **kwargs):
@@ -28,7 +28,7 @@ class TestTranscriptExporter:
     @pytest.fixture
     def base_exporter(self, temp_dir):
         """Create an instance of the concrete subclass for testing"""
-        return TestableExporter(temp_dir)
+        return DummyExporter(temp_dir)
 
     def test_construct_file_path_with_timestamp(self, base_exporter):
         """Test file path construction with timestamp"""

@@ -3,6 +3,7 @@ import os
 import pytest
 
 from app.exporters import TextExporter
+from app.utils import slugify
 
 
 @pytest.mark.unit
@@ -27,7 +28,7 @@ class TestTextExporter:
 
         # Check file path
         expected_path = os.path.join(
-            temp_dir, mock_transcript.source.loc, f"{mock_transcript.title}.txt"
+            temp_dir, mock_transcript.source.loc, f"{slugify(mock_transcript.title)}.txt"
         )
         assert os.path.abspath(result) == os.path.abspath(expected_path)
 

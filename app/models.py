@@ -518,3 +518,132 @@ class PipelineRun(Base):
             else None,
             "status": self.status,
         }
+
+
+# =========================================================================
+# 9. AUDIO PLAYLISTS — Learning Tracks
+# =========================================================================
+
+
+class AudioPlaylist(Base):
+    """A curated audio playlist / learning track (e.g. 'Learn Me a Bitcoin')."""
+
+    __tablename__ = "audio_playlists"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    title = Column(Text, nullable=False)
+    slug = Column(Text, unique=True, nullable=False)
+    description = Column(Text)
+    playlist_type = Column(Text, nullable=False)  # 'series', 'collection'
+    cover_image_url = Column(Text)
+    tags = Column(JSONB, server_default=text("'[]'::jsonb"))
+    status = Column(
+        Text, nullable=False, server_default=text("'draft'")
+    )  # 'draft', 'published', 'archived'
+    total_duration_seconds = Column(Integer, server_default=text("0"))
+    episode_count = Column(Integer, server_default=text("0"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=text("now()"))
+
+    episodes = relationship(
+        "AudioEpisode",
+        back_populates="playlist",
+        cascade="all, delete-orphan",
+        order_by="AudioEpisode.sequence_number",
+    )
+
+    __table_args__ = (
+        Index("idx_playlists_status", "status"),
+        Index("idx_playlists_type", "playlist_type"),
+    )
+
+    def to_dict(self, include_episodes=False):
+        d = {
+            "id": str(self.id),
+            "title": self.title,
+            "slug": self.slug,
+            "description": self.description,
+            "playlist_type": self.playlist_type,
+            "cover_image_url": self.cover_image_url,
+            "tags": self.tags or [],
+            "status": self.status,
+            "total_duration_seconds": self.total_duration_seconds,
+            "episode_count": self.episode_count,
+            "created_at": self.created_at.isoformat()
+            if self.created_at
+            else None,
+            "updated_at": self.updated_at.isoformat()
+            if self.updated_at
+            else None,
+        }
+        if include_episodes:
+            d["episodes"] = [ep.to_dict() for ep in self.episodes]
+        return d
+
+
+# =========================================================================
+# 10. AUDIO EPISODES — Individual Audio Units
+# =========================================================================
+
+
+class AudioEpisode(Base):
+    """A single audio episode within a playlist."""
+
+    __tablename__ = "audio_episodes"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    playlist_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("audio_playlists.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title = Column(Text, nullable=False)
+    description = Column(Text)
+    sequence_number = Column(Integer, nullable=False)
+    audio_url = Column(Text)
+    duration_seconds = Column(Integer)
+    source_url = Column(Text)
+    status = Column(
+        Text, nullable=False, server_default=text("'pending'")
+    )  # 'pending', 'generating', 'completed', 'failed'
+    chapters = Column(JSONB, server_default=text("'[]'::jsonb"))
+    metadata_ = Column("metadata", JSONB, server_default=text("'{}'::jsonb"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+    playlist = relationship("AudioPlaylist", back_populates="episodes")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "playlist_id",
+            "sequence_number",
+            name="uq_episodes_playlist_sequence",
+        ),
+        Index("idx_episodes_playlist", "playlist_id"),
+        Index("idx_episodes_status", "status"),
+    )
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "playlist_id": str(self.playlist_id) if self.playlist_id else None,
+            "title": self.title,
+            "description": self.description,
+            "sequence_number": self.sequence_number,
+            "audio_url": self.audio_url,
+            "duration_seconds": self.duration_seconds,
+            "source_url": self.source_url,
+            "status": self.status,
+            "chapters": self.chapters or [],
+            "metadata": self.metadata_ or {},
+            "created_at": self.created_at.isoformat()
+            if self.created_at
+            else None,
+        }

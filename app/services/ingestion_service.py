@@ -101,12 +101,13 @@ class IngestionService:
         Args:
             item: Row from content_items table with joined source data.
         """
-        url = item.get("url")
-        if not url:
-            url = f"https://www.youtube.com/watch?v={item['external_id']}"
-
         source_info = item.get("content_source") or {}
         source_slug = source_info.get("slug", "misc")
+        source_type = source_info.get("source_type", "")
+
+        url = item.get("url")
+        if not url and source_type == "youtube":
+            url = f"https://www.youtube.com/watch?v={item['external_id']}"
 
         if not url:
             raise ValueError(
@@ -143,7 +144,7 @@ class IngestionService:
         # Update item status
         self._db.update_content_item(
             item["id"],
-            {"status": "transcribed"},
+            {"status": "in_queue"},
         )
 
         logger.info(f"Queued for transcription: {item.get('title', item['external_id'])}")

@@ -38,30 +38,19 @@ class ChannelScanner:
             logger.info("No active channels to scan.")
             return {"items_discovered": 0, "errors": []}
 
-        run = self._db.create_pipeline_run(
-            started_at=datetime.now(timezone.utc)
-        )
-        run_id = run["id"] if run else None
-
         total_discovered = 0
         errors = []
 
         for channel in channels:
             try:
-                count = self._scan_channel(channel)
-                total_discovered += count
+                result = self.scan_channel_by_id(channel["id"])
+                total_discovered += result["items_discovered"]
+                if result.get("errors"):
+                    errors.extend(result["errors"])
             except Exception as e:
                 error_msg = f"Error scanning {channel['name']}: {e}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-
-        if run_id:
-            status = 'failed' if errors else 'success'
-            self._db.complete_pipeline_run(
-                run_id,
-                status=status,
-                completed_at=datetime.now(timezone.utc),
-            )
 
         logger.info(f"Scan complete: {total_discovered} new items discovered.")
         return {"items_discovered": total_discovered, "errors": errors}
@@ -155,7 +144,7 @@ class ChannelScanner:
             self._db.update_source_last_scanned(channel_db_id)
             return 0
 
-        existing = self._db.get_existing_item_external_ids(video_ids)
+        existing = self._db.get_existing_item_external_ids(channel_db_id, video_ids)
         new_ids = [vid for vid in video_ids if vid not in existing]
 
         if not new_ids:

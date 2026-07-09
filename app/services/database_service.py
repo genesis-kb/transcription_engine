@@ -66,8 +66,6 @@ class DatabaseService:
                     content_item = None
                     if video_id:
                         query = session.query(ContentItem).filter_by(external_id=video_id)
-                        if content_source:
-                            query = query.filter_by(source_id=content_source.id)
                         content_item = query.first()
                     
                     if not content_item:
@@ -247,14 +245,16 @@ class DatabaseService:
                     query = query.filter_by(source_type=source_type)
                 objs = query.all()
                 
-                # Sort deterministically by priority (from config, descending) then name (ascending)
+                # Sort deterministically by priority (from config, ascending, 1 is highest) then name (ascending)
                 def get_priority(obj):
                     try:
-                        return int(obj.config.get("priority", 0)) if isinstance(obj.config, dict) else 0
+                        p = obj.config.get("priority") if isinstance(obj.config, dict) else None
+                        if p is None: return 999
+                        return int(p)
                     except (ValueError, TypeError):
-                        return 0
+                        return 999
 
-                objs.sort(key=lambda x: (-get_priority(x), x.name or ""))
+                objs.sort(key=lambda x: (get_priority(x), x.name or ""))
                 return [obj.to_dict() for obj in objs]
         except Exception as e:
             logger.error(f"Failed to get active sources: {e}")

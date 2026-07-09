@@ -82,10 +82,21 @@ def _expand_number(m: re.Match) -> str:
     except Exception:
         return m.group(0)
 
+import json
+from pathlib import Path
+
+try:
+    _lexicon_path = Path(__file__).parent.parent / "audiobook_lexicon.json"
+    with open(_lexicon_path, "r", encoding="utf-8") as f:
+        _lexicon_data = json.load(f)
+    LEXICON_KEYS = {k.upper() for k in _lexicon_data.keys() if not k.startswith("_")}
+except Exception:
+    LEXICON_KEYS = set()
+
 def _expand_acronym(m: re.Match) -> str:
     word = m.group(1)
     plural = m.group(2)
-    if word in PRONOUNCEABLE_ACRONYMS:
+    if word in PRONOUNCEABLE_ACRONYMS or word.upper() in LEXICON_KEYS:
         return m.group(0)
     expanded = "-".join(word)
     if plural:

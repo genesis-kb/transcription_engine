@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.logging import get_logger
 from app.services.database_service import get_database_service
@@ -16,7 +16,7 @@ class SourceCreate(BaseModel):
     slug: str
     source_type: str = "youtube"
     base_url: Optional[str] = None
-    config: dict = {}
+    config: dict = Field(default_factory=dict)
     is_active: bool = True
 
 
@@ -115,6 +115,8 @@ async def update_source(source_id: str, updates: SourceUpdate):
     }
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update.")
+        
+
     result = db.update_source(source_id, update_data)
     if result is None:
         raise HTTPException(status_code=404, detail="Source not found.")
@@ -154,7 +156,7 @@ async def classify_item(item_id: str):
 
     try:
         classifier = ContentClassifier()
-        result = classifier.classify_video_by_id(item_id)
+        result = classifier.classify_item_by_id(item_id)
         return {"status": "success", **result}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -174,13 +176,9 @@ async def list_items(
     """List discovered items with optional filters."""
     db = _get_db()
     
-    # We still allow filtering by technical_score conceptually using the bool flag, 
-    # but the DB now uses technical_score. is_technical=True means technical_score >= 4
-    technical_score = 4 if is_technical else None
-    
     data = db.list_content_items(
         status=status,
-        technical_score=technical_score,
+        is_technical=is_technical,
         source_id=source_id,
         limit=limit,
         offset=offset,
@@ -205,7 +203,7 @@ async def override_item(item_id: str, override: ItemOverride):
     # Update source_metadata to include reason
     item = db.get_item_by_id(item_id)
     if item:
-        meta = item.get("source_metadata", {})
+        meta = item.get("source_metadata") or {}
         meta["classification_reason"] = override.classification_reason or "Manual override"
         meta["classification_confidence"] = 1.0
         updates["source_metadata"] = meta

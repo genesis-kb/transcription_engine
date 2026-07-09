@@ -60,7 +60,7 @@ class ContentClassifier:
             try:
                 result = self._classify_item(item)
                 classified += 1
-                if result["is_technical"]:
+                if result["is_technical"] and result["confidence"] >= self.confidence_threshold:
                     approved += 1
                 else:
                     rejected += 1
@@ -88,7 +88,7 @@ class ContentClassifier:
             "errors": errors,
         }
 
-    def classify_video_by_id(self, item_db_id: str) -> dict:
+    def classify_item_by_id(self, item_db_id: str) -> dict:
         """Classify a single item by its database UUID."""
         item = self._db.get_item_by_id(item_db_id)
         if not item:
@@ -106,7 +106,7 @@ class ContentClassifier:
         Returns:
             Classification result dict.
         """
-        source_metadata = item.get("source_metadata", {})
+        source_metadata = item.get("source_metadata") or {}
         duration = source_metadata.get("duration") or 0
         
         # Skip items outside duration range
@@ -130,8 +130,7 @@ class ContentClassifier:
         # Get channel info from joined data
         source_info = item.get("content_source") or {}
         channel_name = source_info.get("name", "")
-        # The category isn't normally passed in include_source dict anymore, just default to slug
-        channel_category = source_info.get("slug", "unknown")
+        channel_category = source_info.get("category", source_info.get("slug", "unknown"))
 
         title = item.get("title", "")
         description = item.get("description", "")
@@ -166,7 +165,7 @@ class ContentClassifier:
     def _save_classification(self, item: dict, result: dict, status: str):
         """Persist classification result to the database."""
         item_id = item["id"]
-        source_metadata = item.get("source_metadata", {})
+        source_metadata = item.get("source_metadata") or {}
         source_metadata["classification_reason"] = result["reason"]
         source_metadata["classification_confidence"] = result["confidence"]
         

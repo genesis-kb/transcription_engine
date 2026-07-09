@@ -50,6 +50,14 @@ def run_migration(dry_run=False):
                 if not dry_run:
                     logger.info("Running Base.metadata.create_all to ensure tables exist...")
                     Base.metadata.create_all(conn)
+                    logger.info("Cleaning up duplicate transcript versions...")
+                    conn.execute(text("""
+                        DELETE FROM transcripts T1
+                        USING transcripts T2
+                        WHERE T1.content_item_id = T2.content_item_id
+                          AND T1.version = T2.version
+                          AND T1.id > T2.id;
+                    """))
                     logger.info("Ensuring transcript version unique constraint...")
                     conn.execute(text("ALTER TABLE transcripts DROP CONSTRAINT IF EXISTS uq_transcripts_content_item_version;"))
                     conn.execute(text("ALTER TABLE transcripts ADD CONSTRAINT uq_transcripts_content_item_version UNIQUE (content_item_id, version);"))

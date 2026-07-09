@@ -1,0 +1,30 @@
+llm:
+  provider: openai
+  model: gpt-4.1          # rewrite/chapterize model
+  temperature: 0.3
+  max_words_per_request: 2500   # split long input before sending to the LLM
+
+tts:
+  provider: deepgram      # deepgram | smallest  (switch to A/B your credits)
+  voices:
+    deepgram: aura-2-thalia-en
+    smallest: meher        # valid Waves voice (also: magnus, olivia, aarush)
+  models:
+    smallest: lightning_v3.1_pro   # drop / use lightning_v3.1 for more voices + cloning
+  # Per-request input caps differ per provider; chunker respects these.
+  max_chars:
+    deepgram: 1900
+    smallest: 240          # Smallest recommends ~250 chars/request
+  speed: 1.0
+  format: mp3             # normalized to this before stitching
+
+audio:
+  silence_ms_between_chunks: 220
+  silence_ms_between_chapters: 700
+  target_dbfs: -20.0      # simple loudness normalization target
+
+paths:
+  input_dir: input
+  output_dir: output
+  cache_dir: .cache
+  lexicon: audiobook_lexicon.json

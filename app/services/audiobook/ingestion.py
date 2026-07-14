@@ -119,6 +119,10 @@ def parse_file(filepath: Path) -> Optional[InputFile]:
         return None
         
     title = meta.get("title", filepath.stem.replace("_", " ").title())
+    
+    if input_type not in ("single_article", "series"):
+        logger.warning(f"Invalid type '{input_type}' in {filepath.name}, defaulting to single_article")
+        input_type = "single_article"
 
     if input_type == "series":
         if not meta.get("series_slug"):

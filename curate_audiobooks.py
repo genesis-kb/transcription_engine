@@ -14,7 +14,6 @@ Usage:
     python curate_audiobooks.py --provider smallest
 """
 import argparse
-import json
 import sys
 
 from app.services.audiobook.curator import AudiobookCurator

@@ -33,9 +33,12 @@ def main():
     try:
         with open(args.input, "r", encoding="utf-8") as f:
             text = f.read()
+            if not text.strip():
+                print(f"❌ Error: File '{args.input}' is empty.")
+                raise SystemExit(1)
     except FileNotFoundError:
         print(f"❌ Error: File '{args.input}' not found.")
-        return
+        raise SystemExit(1)
 
     print("Initializing Audiobook Service...")
     service = AudiobookService()

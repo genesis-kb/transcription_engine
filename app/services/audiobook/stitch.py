@@ -21,7 +21,9 @@ def build_chapter(chunks: list[bytes], cfg: dict[str, Any]) -> AudioSegment:
     segments = [first]
     for c in chunks[1:]:
         segments.append(gap)
-        segments.append(_seg(c, fmt))
+        seg = _seg(c, fmt)
+        seg = seg.set_frame_rate(first.frame_rate).set_channels(first.channels).set_sample_width(first.sample_width)
+        segments.append(seg)
         
     res = segments[0]
     for s in segments[1:]:
@@ -51,6 +53,7 @@ def export_book(chapters: list[AudioSegment], cfg: dict[str, Any], out_path: Pat
     segments = [first]
     for ch in chapters[1:]:
         segments.append(gap)
+        ch = ch.set_frame_rate(first.frame_rate).set_channels(first.channels).set_sample_width(first.sample_width)
         segments.append(ch)
         
     book = segments[0]

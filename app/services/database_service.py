@@ -63,42 +63,35 @@ class DatabaseService:
                     if hasattr(source, "loc") and source.loc:
                         content_source = session.query(ContentSource).filter_by(slug=source.loc).first()
                         
-                    content_item = None
-                    if video_id:
-                        query = session.query(ContentItem).filter_by(external_id=video_id)
-                        content_item = query.first()
+                    if content_source:
+                        target_source_id = content_source.id
+                    else:
+                        manual_source = session.query(ContentSource).filter_by(slug='manual-imports').first()
+                        if not manual_source:
+                            manual_source = ContentSource(
+                                name='Manual Imports',
+                                slug='manual-imports',
+                                source_type='manual',
+                                is_active=True
+                            )
+                            session.add(manual_source)
+                            session.flush()
+                        target_source_id = manual_source.id
+                        
+                    ext_id = video_id if video_id else f"manual-{uuid.uuid4().hex[:12]}"
+                    content_item = session.query(ContentItem).filter_by(source_id=target_source_id, external_id=ext_id).first()
                     
                     if not content_item:
-                        if content_source:
-                            target_source_id = content_source.id
-                        else:
-                            # Find or create manual source
-                            manual_source = session.query(ContentSource).filter_by(slug='manual-imports').first()
-                            if not manual_source:
-                                manual_source = ContentSource(
-                                    name='Manual Imports',
-                                    slug='manual-imports',
-                                    source_type='manual',
-                                    is_active=True
-                                )
-                                session.add(manual_source)
-                                session.flush()
-                            target_source_id = manual_source.id
-
-                        ext_id = video_id if video_id else f"manual-{uuid.uuid4().hex[:12]}"
-                        
-                        content_item = session.query(ContentItem).filter_by(source_id=target_source_id, external_id=ext_id).first()
-                        if not content_item:
-                            content_item = ContentItem(
-                                source_id=target_source_id,
-                                external_id=ext_id,
-                                title=source.title or 'Unknown',
-                                content_type='video',
-                                url=media_url,
-                                status='transcribed'
-                            )
-                            session.add(content_item)
-                            session.flush()
+                        content_item = ContentItem(
+                            source_id=target_source_id,
+                            external_id=ext_id,
+                            title=source.title or 'Unknown',
+                            content_type='video',
+                            url=media_url,
+                            status='transcribed'
+                        )
+                        session.add(content_item)
+                        session.flush()
                     else:
                         content_item.status = 'transcribed'
 
@@ -138,6 +131,8 @@ class DatabaseService:
                         from app.utils import slugify
                         for spk_name in source.speakers:
                             spk_slug = slugify(spk_name)
+                            if not spk_slug:
+                                spk_slug = f"unknown-{uuid.uuid4().hex[:8]}"
                             spk = session.query(Speaker).filter_by(slug=spk_slug).first()
                             if not spk:
                                 spk = Speaker(name=spk_name, slug=spk_slug)

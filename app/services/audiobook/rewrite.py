@@ -24,49 +24,64 @@ SOURCE:
 \"\"\""""
 
 def rewrite(text: str, cfg: dict[str, Any]) -> dict[str, Any]:
-    client = OpenAI(api_key=cfg["keys"].get("openai", ""))
-    resp = client.chat.completions.create(
-        model=cfg["llm"]["model"],
-        temperature=cfg["llm"]["temperature"],
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": USER_TMPL.format(source=text)},
-        ],
-    )
-    try:
-        content = resp.choices[0].message.content
-        if not content:
-            manifest = {}
-        else:
-            manifest = json.loads(content)
-            if not isinstance(manifest, dict):
-                manifest = {}
-    except (IndexError, AttributeError, ValueError, json.JSONDecodeError):
-        manifest = {}
-
-    manifest.setdefault("title", "Untitled Audiobook")
+    max_words = cfg["llm"].get("max_words_per_request", 3000)
+    words = text.split()
     
-    chapters = manifest.get("chapters", [])
-    if not isinstance(chapters, list):
-        chapters = []
-        
-    valid_chapters = []
-    for ch in chapters:
-        if not isinstance(ch, dict):
-            continue
-        title = ch.get("title")
-        text_val = ch.get("text")
-        # Coerce non-string values; skip entries that are None or non-stringable
-        if title is None or text_val is None:
-            continue
-        if not isinstance(title, str):
-            title = str(title)
-        if not isinstance(text_val, str):
-            text_val = str(text_val)
-        if not title.strip() or not text_val.strip():
-            continue
-        valid_chapters.append({"title": title.strip(), "text": text_val})
+    if len(words) <= max_words:
+        chunks = [text]
+    else:
+        chunks = []
+        for i in range(0, len(words), max_words):
+            chunks.append(" ".join(words[i:i + max_words]))
             
-    manifest["chapters"] = valid_chapters
-    return manifest
+    client = OpenAI(api_key=cfg["keys"].get("openai", ""))
+    
+    merged_chapters = []
+    book_title = "Untitled Audiobook"
+    
+    for chunk in chunks:
+        resp = client.chat.completions.create(
+            model=cfg["llm"]["model"],
+            temperature=cfg["llm"]["temperature"],
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": USER_TMPL.format(source=chunk)},
+            ],
+        )
+        try:
+            content = resp.choices[0].message.content
+            if not content:
+                manifest = {}
+            else:
+                manifest = json.loads(content)
+                if not isinstance(manifest, dict):
+                    manifest = {}
+        except (IndexError, AttributeError, ValueError, json.JSONDecodeError):
+            manifest = {}
+
+        if manifest.get("title") and book_title == "Untitled Audiobook":
+            if isinstance(manifest["title"], str) and manifest["title"].strip():
+                book_title = manifest["title"].strip()
+        
+        chapters = manifest.get("chapters", [])
+        if not isinstance(chapters, list):
+            chapters = []
+            
+        for ch in chapters:
+            if not isinstance(ch, dict):
+                continue
+            title = ch.get("title")
+            text_val = ch.get("text")
+            # Coerce non-string values; skip entries that are None or non-stringable
+            if title is None or text_val is None:
+                continue
+            if not isinstance(title, str):
+                title = str(title)
+            if not isinstance(text_val, str):
+                text_val = str(text_val)
+            if not title.strip() or not text_val.strip():
+                continue
+            merged_chapters.append({"title": title.strip(), "text": text_val.strip()})
+            
+    return {"title": book_title, "chapters": merged_chapters}

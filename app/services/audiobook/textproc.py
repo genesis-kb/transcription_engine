@@ -5,8 +5,8 @@ try:
 except ImportError:
     num2words = None
 
-TIMESTAMP = re.compile(r"[\[\(]?\b\d{1,2}:\d{2}(?::\d{2})?\b[\]\)]?")
-SPEAKER = re.compile(r"^\s*[A-Z][A-Za-z0-9 _-]{0,30}:\s", re.MULTILINE)
+TIMESTAMP = re.compile(r"[\[\(]\b\d{1,2}:\d{2}(?::\d{2})?\b[\]\)]|^\s*\d{1,2}:\d{2}(?::\d{2})?\b", re.MULTILINE)
+SPEAKER = re.compile(r"^\s*(?!(?:Chapter|Question|Answer|Note|Part|Section)\b)[A-Z][A-Za-z0-9 _-]{0,30}:\s", re.MULTILINE)
 STAGE = re.compile(r"[\[\(](?:laughter|music|applause|crosstalk|inaudible)[\]\)]", re.I)
 MULTISPACE = re.compile(r"[ \t]{2,}")
 MULTINEWLINE = re.compile(r"\n{3,}")

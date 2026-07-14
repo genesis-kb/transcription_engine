@@ -249,5 +249,5 @@ class AudiobookService:
                 "status": "completed",
             }
         except Exception as e:
-            logger.error(f"Audio generation failed: {e}")
+            logger.exception(f"Audio generation failed: {e}")
             return None

@@ -5,7 +5,8 @@ Endpoints:
     GET /audiobooks/playlists/{slug}            — single playlist + episodes
     GET /audiobooks/episodes/{episode_id}       — single episode
 """
-from typing import Optional
+from typing import Optional, Literal
+import uuid
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -27,11 +28,11 @@ def _service() -> PlaylistService:
 
 @router.get("/playlists")
 def list_playlists(
-    status: Optional[str] = Query(
+    status: Optional[Literal["draft", "published", "archived"]] = Query(
         None,
         description="Filter by status: draft | published | archived",
     ),
-    playlist_type: Optional[str] = Query(
+    playlist_type: Optional[Literal["series", "collection"]] = Query(
         None,
         description="Filter by type: series | collection",
     ),
@@ -92,13 +93,13 @@ def get_playlist(slug: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/episodes/{episode_id}")
-def get_episode(episode_id: str):
+def get_episode(episode_id: uuid.UUID):
     """Get a single episode by UUID.
 
     Useful for deep-linking directly to a specific episode.
     """
     try:
-        episode = _service().get_episode_by_id(episode_id)
+        episode = _service().get_episode_by_id(str(episode_id))
         if not episode:
             raise HTTPException(
                 status_code=404,

@@ -389,7 +389,6 @@ class DatabaseService:
             with get_session() as session:
                 rows = (
                     session.query(ContentItem.external_id)
-                    .filter(ContentItem.source_id == source_id)
                     .filter(ContentItem.external_id.in_(external_ids))
                     .all()
                 )

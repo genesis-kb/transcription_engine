@@ -287,10 +287,13 @@ class AudiobookCurator:
         )
 
         try:
+            paths_cfg = self._pipeline.cfg.get("paths") or {}
+            base_output = Path(paths_cfg.get("output_dir") or "outputs/audiobooks")
+            
             result = self._pipeline.generate_episode(
                 text=text,
                 title=episode["title"],
-                output_dir=Path("outputs/audiobooks") / episode_id,
+                output_dir=base_output / episode_id,
                 skip_llm=skip_llm,
                 provider_override=self._provider_override,
                 diarize=self._diarize,

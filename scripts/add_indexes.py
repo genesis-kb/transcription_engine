@@ -80,6 +80,16 @@ def add_indexes():
                 )
         else:
             logger.info('Skipping optional PostgreSQL extension creation for "pg_trgm".')
+            
+        try:
+            invalid_indexes = conn.execute(text(
+                "SELECT i.relname FROM pg_class i JOIN pg_index x ON i.oid = x.indexrelid WHERE x.indisvalid = false;"
+            )).scalars().all()
+            for idx in invalid_indexes:
+                logger.info(f"Dropping invalid index: {idx}")
+                conn.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {idx};"))
+        except Exception as e:
+            logger.warning(f"Could not check/drop invalid indexes: {e}")
         
         for sql in index_sqls:
             logger.info(f"Executing: {sql.strip().split(chr(10))[0]}...")

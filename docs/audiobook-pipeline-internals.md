@@ -155,7 +155,7 @@ For each chapter:
 For each chunk:
 1. The `TTSProvider` instance handles pronunciation lexicons (currently via software fallback before API invocation).
 2. If diarization is active, the pipeline assigns a deterministic distinct voice based on a hash of the speaker's name.
-3. A cache key is computed from `provider + voice + format + text + lex_hash` (SHA-256, first 24 hex chars).
+3. A cache key is computed from `provider + voice + format + text + lex_hash + speed + model` (SHA-256, first 24 hex chars).
 4. If `.cache/audiobooks/<key>.mp3` exists → cache hit, reads bytes from disk.
 5. Otherwise → calls the TTS API, writes bytes to cache, returns bytes.
 
@@ -223,6 +223,11 @@ audio:
   silence_ms_between_chunks: 220
   silence_ms_between_chapters: 700
   target_dbfs: -20.0            # loudness normalization target
+
+paths:
+  output_dir: outputs/audiobooks
+  cache_dir: .cache/audiobooks
+  lexicon: audiobook_lexicon.json
 ```
 
 **`app/services/audiobook_lexicon.json`**

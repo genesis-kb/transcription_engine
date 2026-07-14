@@ -97,7 +97,7 @@ def _expand_acronym(m: re.Match) -> str:
         return m.group(0)
     expanded = "-".join(word)
     if plural:
-        expanded += "-s"
+        expanded += "s"
     return expanded
 
 def normalize(text: str) -> str:
@@ -121,6 +121,8 @@ PROSODY_SPLIT = re.compile(r'(?<=[;:,\—\-])\s+')
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
 def chunk_split(text: str, max_chars: int) -> list[str]:
+    if max_chars <= 0:
+        raise ValueError("max_chars must be a positive integer")
     if nltk:
         try:
             sentences = nltk.tokenize.sent_tokenize(text.strip())

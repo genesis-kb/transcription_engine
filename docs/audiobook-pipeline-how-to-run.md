@@ -105,33 +105,38 @@ Files with no `---` block are automatically treated as a single article. The fil
 
 ### Full pipeline (recommended)
 
-```bash
-python curate_audiobooks.py
+Create a Python script (e.g., `run_curator.py`) to curate a whole directory:
+
+```python
+from app.services.audiobook.curator import AudiobookCurator
+
+curator = AudiobookCurator()
+curator.curate_from_directory("input/audiobooks")
 ```
 
-Reads all `.txt` files from `input/audiobooks/`, runs LLM chapterization on articles over 5,000 words, generates audio, and saves everything to the database.
+### Common overrides
 
-### Common flags
+You can override defaults by passing arguments to the `AudiobookCurator`:
 
-```bash
+```python
 # Skip the OpenAI rewrite step (faster and cheaper)
-python curate_audiobooks.py --skip-llm
+curator = AudiobookCurator(skip_llm=True)
 
 # Point at a specific directory (avoids re-processing other files)
-python curate_audiobooks.py --input-dir input/audiobooks/networking
+curator.curate_from_directory("input/audiobooks/networking")
 
 # Override TTS provider
-python curate_audiobooks.py --provider smallest
-python curate_audiobooks.py --provider deepgram
+curator = AudiobookCurator(provider_override="smallest")
 
 # Enable multi-speaker diarization
-python curate_audiobooks.py --diarize
+curator = AudiobookCurator(diarize=True)
 
-# Combine flags
-python curate_audiobooks.py --input-dir input/audiobooks/networking --skip-llm --provider smallest
-
-# Change the word count threshold for LLM chapterization (default: 5000)
-python curate_audiobooks.py --threshold 3000
+# Combine overrides and change threshold
+curator = AudiobookCurator(
+    skip_llm=True, 
+    provider_override="smallest", 
+    chapterize_threshold=3000
+)
 ```
 
 > **Tip:** Use `--input-dir` to target a specific subfolder when you only want to process new files. This prevents the pipeline from re-scanning (and potentially re-trying) unrelated files.
@@ -170,11 +175,18 @@ After a successful run you will see a summary like:
 
 ## Legacy: Single-File Generation (No DB)
 
-For quick one-off generation without touching the database:
+For quick one-off generation without touching the database, write a simple script:
 
-```bash
-python generate_audiobook.py input/audiobooks/some-article.txt
-python generate_audiobook.py input/audiobooks/some-article.txt --skip-llm
+```python
+from app.services.audiobook.pipeline import AudiobookService
+
+service = AudiobookService()
+with open("input/audiobooks/some-article.txt") as f:
+    text = f.read()
+
+# Outputs to outputs/audiobooks/some-article.mp3
+result = service.generate_from_text(text, skip_llm=True, title="some-article")
+print("Saved to:", result["audio_url"])
 ```
 
 This uses the `AudiobookService` wrapper which calls the audio pipeline directly and prints the output path. No playlist or episode records are created.

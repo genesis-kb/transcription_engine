@@ -136,6 +136,7 @@ def run_migration(dry_run=False):
                 FROM deduped_source_rows
                 ON CONFLICT (slug) DO UPDATE SET
                     name = EXCLUDED.name,
+                    source_type = EXCLUDED.source_type,
                     base_url = EXCLUDED.base_url,
                     config = EXCLUDED.config,
                     is_active = EXCLUDED.is_active,
@@ -192,7 +193,10 @@ def run_migration(dry_run=False):
                 manual_source_id = conn.execute(text("""
                     INSERT INTO content_sources (name, slug, source_type, is_active)
                     VALUES ('Manual Imports', 'manual-imports', 'manual', true)
-                    ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+                    ON CONFLICT (slug) DO UPDATE SET 
+                        name = EXCLUDED.name,
+                        source_type = EXCLUDED.source_type,
+                        is_active = EXCLUDED.is_active
                     RETURNING id;
                 """)).scalar()
 
@@ -214,6 +218,7 @@ def run_migration(dry_run=False):
                         last_id = batch[-1].id
 
                 migrated_transcripts_count = 0
+                ci_versions = {}
                 for t in iter_transcripts():
                     t_id = t.id
                     raw = t.raw_text
@@ -244,11 +249,19 @@ def run_migration(dry_run=False):
                         """), {"s_id": manual_source_id, "ext_id": ext_id, "title": t.title or 'Unknown', "url": db_url}).first()
                         content_item_id = row[0]
 
+                    version = ci_versions.get(content_item_id, 0) + 1
+                    ci_versions[content_item_id] = version
+                    
+                    if version > 1:
+                        conn.execute(text("""
+                            UPDATE transcripts SET is_current = false WHERE content_item_id = :ci_id
+                        """), {"ci_id": content_item_id})
+
                     conn.execute(text("""
                         INSERT INTO transcripts (id, content_item_id, is_current, version, raw_text, corrected_text, created_at)
-                        VALUES (:t_id, :ci_id, true, 1, :raw, :corr, :created_at)
+                        VALUES (:t_id, :ci_id, true, :version, :raw, :corr, :created_at)
                         ON CONFLICT (id) DO NOTHING
-                    """), {"t_id": t_id, "ci_id": content_item_id, "raw": raw, "corr": corrected, "created_at": t.created_at})
+                    """), {"t_id": t_id, "ci_id": content_item_id, "version": version, "raw": raw, "corr": corrected, "created_at": t.created_at})
                     migrated_transcripts_count += 1
                     
                     if summary:

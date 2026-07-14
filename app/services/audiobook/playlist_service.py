@@ -136,8 +136,9 @@ class PlaylistService:
             )
             if not pl:
                 return None
+            ALLOWED_PLAYLIST_FIELDS = {"title", "slug", "playlist_type", "description", "tags", "status", "cover_image_url"}
             for key, value in updates.items():
-                if hasattr(pl, key):
+                if key in ALLOWED_PLAYLIST_FIELDS and hasattr(pl, key):
                     setattr(pl, key, value)
             pl.updated_at = datetime.now(timezone.utc)
             session.commit()
@@ -289,10 +290,11 @@ class PlaylistService:
             )
             if not ep:
                 return None
+            ALLOWED_EPISODE_FIELDS = {"title", "description", "sequence_number", "audio_url", "duration_seconds", "source_url", "status", "chapters"}
             for key, value in updates.items():
                 if key == "metadata":
                     ep.metadata_ = value
-                elif hasattr(ep, key):
+                elif key in ALLOWED_EPISODE_FIELDS and hasattr(ep, key):
                     setattr(ep, key, value)
             session.commit()
             return ep.to_dict()

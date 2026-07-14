@@ -40,9 +40,10 @@ def main():
             playlist = session.query(AudioPlaylist).filter_by(id=ep.playlist_id).first()
             playlist_title = playlist.title if playlist else "Unknown"
             
+            safe_playlist_title = "".join(c if c.isalnum() or c in " _-" else "" for c in playlist_title).replace(" ", "_")
             safe_ep_title = "".join(c if c.isalnum() or c in " _-" else "" for c in ep.title).replace(" ", "_")
             ext = local_path.suffix
-            destination_path = f"{playlist_title}/{safe_ep_title}{ext}"
+            destination_path = f"{safe_playlist_title}/{safe_ep_title}{ext}"
             
             logger.info(f"Uploading {ep.title} to {destination_path}...")
             public_url = upload_to_supabase(local_path, "audiobooks", destination_path)

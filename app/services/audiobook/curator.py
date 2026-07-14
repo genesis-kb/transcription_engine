@@ -229,7 +229,7 @@ class AudiobookCurator:
             tags=inp.tags,
         )
 
-        seq = self._playlists.get_next_sequence_number(playlist["id"])
+        seq = 1
         episode, created = self._playlists.find_or_create_episode(
             playlist_id=playlist["id"],
             title=inp.title,

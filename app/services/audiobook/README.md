@@ -16,6 +16,7 @@ app/services/audiobook/
 ├── textproc.py           # Text cleaning, normalization, chunking
 ├── tts.py                # TTS providers (Deepgram, Smallest AI)
 ├── stitch.py             # Audio stitching + loudness normalization
+├── storage.py            # Supabase audio uploading
 └── README.md             # This file
 ```
 
@@ -31,6 +32,7 @@ app/services/audiobook/
 | **`textproc.py`** | Regex-based text cleaning (strips timestamps, speaker tags), lexicon substitution, sentence-boundary chunking. |
 | **`tts.py`** | Abstract `TTSProvider` with implementations for Deepgram and Smallest AI. |
 | **`stitch.py`** | Uses `pydub` to concatenate audio chunks, insert silence gaps, and normalize loudness. |
+| **`storage.py`** | Uploads generated MP3 files to Supabase object storage. |
 
 ## 🚀 How to Run (Step-by-Step)
 
@@ -45,6 +47,8 @@ Ensure your `.env` file in the project root has these keys:
 OPENAI_API_KEY=your_openai_key
 DEEPGRAM_API_KEY=your_deepgram_key
 SMALLEST_API_KEY=your_smallest_key
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_key
 ```
 
 **Step 3: Run Database Migration**
@@ -157,6 +161,8 @@ Loaded automatically from the project root `.env`:
 OPENAI_API_KEY=      # LLM rewrite (only needed if NOT using --skip-llm)
 DEEPGRAM_API_KEY=    # Deepgram TTS provider
 SMALLEST_API_KEY=    # Smallest AI TTS provider
+SUPABASE_URL=        # Supabase API URL for storage
+SUPABASE_KEY=        # Supabase API Key for storage
 ```
 
 ## 🛠️ System Requirements

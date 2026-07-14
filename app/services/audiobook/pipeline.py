@@ -120,7 +120,7 @@ class AudioPipeline:
         clean_txt = clean_text(text, retain_speakers=diarize)
 
         # Step 2: Optionally rewrite via LLM
-        if skip_llm:
+        if skip_llm or diarize:
             manifest = {
                 "title": title,
                 "chapters": [{"title": title, "text": clean_txt}],
@@ -146,11 +146,8 @@ class AudioPipeline:
         base_output = Path(paths_cfg.get("output_dir") or DEFAULT_OUTPUT_DIR)
         cache_dir = Path(paths_cfg.get("cache_dir") or DEFAULT_CACHE_DIR)
 
+        safe_title = "".join(c if c.isalnum() or c in " -_" else "" for c in title).strip() or "episode"
         if output_dir is None:
-            safe_title = "".join(
-                c if c.isalnum() or c in " -_" else ""
-                for c in title
-            ).strip() or "episode"
             output_dir = base_output / safe_title
 
         # Step 3+4: Normalize → chunk → TTS per chapter
@@ -176,7 +173,10 @@ class AudioPipeline:
             audio_chunks = []
             for spk_chunk in speaker_chunks:
                 speaker = spk_chunk["speaker"]
-                spoken = normalize(spk_chunk["text"])
+                spoken = spk_chunk["text"]
+                if hasattr(provider, "apply_lexicon_fallback"):
+                    spoken = provider.apply_lexicon_fallback(spoken)
+                spoken = normalize(spoken)
                 pieces = chunk_split(spoken, cap)
                 
                 original_voice = provider.voice
@@ -199,7 +199,6 @@ class AudioPipeline:
 
         # Step 5: Stitch into final file
         logger.info("[pipeline] Stitching final audio")
-        safe_title = "".join(c if c.isalnum() or c in " -_" else "" for c in title).strip() or "episode"
         final_path = output_dir / f"{safe_title}.{fmt}"
         export_book(chapters_audio, cfg, final_path)
 

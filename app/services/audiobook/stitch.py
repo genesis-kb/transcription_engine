@@ -23,7 +23,10 @@ def build_chapter(chunks: list[bytes], cfg: dict[str, Any]) -> AudioSegment:
         segments.append(gap)
         segments.append(_seg(c, fmt))
         
-    return first._spawn(b"".join(s.raw_data for s in segments))
+    res = segments[0]
+    for s in segments[1:]:
+        res += s
+    return res
 
 def normalize_loudness(seg: AudioSegment, target_dbfs: float) -> AudioSegment:
     if seg.dBFS == float("-inf"): return seg
@@ -50,6 +53,8 @@ def export_book(chapters: list[AudioSegment], cfg: dict[str, Any], out_path: Pat
         segments.append(gap)
         segments.append(ch)
         
-    book = first._spawn(b"".join(s.raw_data for s in segments))
+    book = segments[0]
+    for s in segments[1:]:
+        book += s
     book = normalize_loudness(book, cfg["audio"]["target_dbfs"])
     return export_segment(book, out_path, cfg["tts"]["format"])

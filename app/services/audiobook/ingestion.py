@@ -99,6 +99,9 @@ def parse_file(filepath: Path) -> Optional[InputFile]:
 
     try:
         meta = yaml.safe_load(match.group(1)) or {}
+        if not isinstance(meta, dict):
+            logger.error(f"Invalid YAML frontmatter in {filepath.name}: not a mapping")
+            return None
     except yaml.YAMLError as e:
         logger.error(f"Invalid YAML frontmatter in {filepath.name}: {e}")
         return None
@@ -109,12 +112,30 @@ def parse_file(filepath: Path) -> Optional[InputFile]:
         return None
 
     input_type = meta.get("type", "single_article")
+    if input_type not in ("single_article", "series"):
+        logger.error(
+            f"Unsupported input type '{input_type}' in {filepath.name}, skipping"
+        )
+        return None
+        
     title = meta.get("title", filepath.stem.replace("_", " ").title())
 
     if input_type == "series":
         if not meta.get("series_slug"):
             logger.error(
                 f"Series file {filepath.name} missing 'series_slug', "
+                "skipping"
+            )
+            return None
+        if "sequence_number" not in meta:
+            logger.error(
+                f"Series file {filepath.name} missing 'sequence_number', "
+                "skipping"
+            )
+            return None
+        if "series_title" not in meta:
+            logger.error(
+                f"Series file {filepath.name} missing 'series_title', "
                 "skipping"
             )
             return None

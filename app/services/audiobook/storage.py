@@ -29,8 +29,9 @@ def upload_to_supabase(file_path: Path, bucket_name: str, destination_path: str)
     }
     
     try:
+        timeout_val = float(os.environ.get("SUPABASE_UPLOAD_TIMEOUT", 300))
         with open(file_path, "rb") as f:
-            response = requests.post(url, headers=headers, data=f, timeout=30)
+            response = requests.post(url, headers=headers, data=f, timeout=(10, timeout_val))
             response.raise_for_status()
             
         public_url = f"{supabase_url.rstrip('/')}/storage/v1/object/public/{bucket_name}/{safe_destination}"

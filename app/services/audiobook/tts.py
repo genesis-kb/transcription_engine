@@ -38,7 +38,7 @@ class TTSProvider(ABC):
 
 class DeepgramTTS(TTSProvider):
     name = "deepgram"
-    supported_formats = {"mp3", "wav", "linear16"}
+    supported_formats = {"mp3", "wav"}
 
     def synthesize(self, text: str) -> bytes:
         text = self.apply_lexicon_fallback(text)
@@ -56,7 +56,7 @@ class DeepgramTTS(TTSProvider):
 
 class SmallestTTS(TTSProvider):
     name = "smallest"
-    supported_formats = {"mp3", "wav", "pcm"}
+    supported_formats = {"mp3", "wav"}
 
     def synthesize(self, text: str) -> bytes:
         text = self.apply_lexicon_fallback(text)

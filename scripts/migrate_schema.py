@@ -83,6 +83,10 @@ def run_migration(dry_run=False):
             if not dry_run:
                 logger.info("Creating new tables...")
                 Base.metadata.create_all(conn)
+                
+                # Ensure unique constraint exists if table already existed
+                conn.execute(text("ALTER TABLE transcripts DROP CONSTRAINT IF EXISTS uq_transcripts_content_item_version;"))
+                conn.execute(text("ALTER TABLE transcripts ADD CONSTRAINT uq_transcripts_content_item_version UNIQUE (content_item_id, version);"))
             else:
                 logger.info("DRY RUN: Base.metadata.create_all(conn)")
 
@@ -145,29 +149,36 @@ def run_migration(dry_run=False):
 
             logger.info("Migrating data from old_youtube_videos -> content_items...")
             migrate_items_sql = """
+                WITH deduped_channels AS (
+                    SELECT id AS old_id,
+                           CASE WHEN COUNT(*) OVER (PARTITION BY LOWER(REGEXP_REPLACE(channel_name, '[^a-zA-Z0-9]+', '-', 'g'))) > 1 THEN LOWER(REGEXP_REPLACE(channel_name, '[^a-zA-Z0-9]+', '-', 'g')) || '-' || id ELSE LOWER(REGEXP_REPLACE(channel_name, '[^a-zA-Z0-9]+', '-', 'g')) END AS slug
+                    FROM old_youtube_channels
+                )
                 INSERT INTO content_items (id, source_id, external_id, title, description, content_type, url, published_at, event_date, status, technical_score, source_metadata, discovered_at)
                 SELECT 
-                    id, 
-                    channel_id, 
-                    video_id, 
-                    title, 
-                    description, 
+                    v.id, 
+                    cs.id, 
+                    v.video_id, 
+                    v.title, 
+                    v.description, 
                     'video', 
-                    'https://www.youtube.com/watch?v=' || video_id, 
-                    published_at, 
+                    'https://www.youtube.com/watch?v=' || v.video_id, 
+                    v.published_at, 
                     NULL, 
-                    status, 
-                    CASE WHEN is_technical THEN 5 ELSE 1 END, 
+                    v.status, 
+                    CASE WHEN v.is_technical THEN 5 ELSE 1 END, 
                     jsonb_build_object(
-                        'duration', duration, 
-                        'tags', tags, 
-                        'thumbnail_url', thumbnail_url, 
-                        'view_count', view_count,
-                        'classification_reason', classification_reason,
-                        'classification_confidence', classification_confidence
+                        'duration', v.duration, 
+                        'tags', v.tags, 
+                        'thumbnail_url', v.thumbnail_url, 
+                        'view_count', v.view_count,
+                        'classification_reason', v.classification_reason,
+                        'classification_confidence', v.classification_confidence
                     ), 
-                    discovered_at
-                FROM old_youtube_videos;
+                    v.discovered_at
+                FROM old_youtube_videos v
+                JOIN deduped_channels dc ON v.channel_id = dc.old_id
+                JOIN content_sources cs ON cs.slug = dc.slug;
             """
             if not dry_run:
                 res = conn.execute(text(migrate_items_sql))
@@ -288,7 +299,7 @@ def run_migration(dry_run=False):
                         last_run_status = pr.status
                     FROM (
                         SELECT id, source_id, status,
-                               ROW_NUMBER() OVER(PARTITION BY source_id ORDER BY started_at DESC) as rn
+                               ROW_NUMBER() OVER(PARTITION BY source_id ORDER BY started_at DESC NULLS LAST, id ASC) as rn
                         FROM pipeline_runs
                         WHERE source_id IS NOT NULL
                     ) pr

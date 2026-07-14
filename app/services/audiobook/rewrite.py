@@ -64,7 +64,7 @@ def rewrite(text: str, cfg: dict[str, Any]) -> dict[str, Any]:
             title = str(title)
         if not isinstance(text_val, str):
             text_val = str(text_val)
-        if not title.strip():
+        if not title.strip() or not text_val.strip():
             continue
         valid_chapters.append({"title": title.strip(), "text": text_val})
             

@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -6,6 +7,7 @@ import logging
 
 from app.exceptions import DuplicateSourceError
 from app.logging import configure_logger
+from app.scheduler import start_scheduler, stop_scheduler
 from routes.curator import router as curator_router
 from routes.ingestion import router as ingestion_router
 from routes.media import router as media_router
@@ -17,7 +19,16 @@ from routes.yt_commenter import router as yt_commenter_router
 configure_logger(log_level=logging.INFO)
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    start_scheduler()
+    yield
+    # Shutdown
+    stop_scheduler()
+
+
+app = FastAPI(lifespan=lifespan)
 
 origins = [
     "http://localhost:3000",

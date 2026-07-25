@@ -50,16 +50,9 @@ class YouTubeCommenterService:
         if not video_id:
             raise ValueError(f"Could not extract video ID from URL: {video_url}")
 
-        # Check if we already commented on this video
-        existing = self._db.get_yt_comment_by_video_id(video_id)
+        existing = self._check_existing(video_id)
         if existing:
-            logger.info(f"Already commented on video {video_id}, skipping.")
-            return {
-                "status": "already_commented",
-                "video_id": video_id,
-                "comment_id": existing["comment_id"],
-                "posted_at": existing["posted_at"],
-            }
+            return existing
 
         # Look up transcript in DB
         transcript = self._db.get_transcript_by_video_id(video_id)
@@ -102,15 +95,9 @@ class YouTubeCommenterService:
             raise ValueError(f"Could not extract video ID from URL: {video_url}")
 
         # Check duplicate
-        existing = self._db.get_yt_comment_by_video_id(video_id)
+        existing = self._check_existing(video_id)
         if existing:
-            logger.info(f"Already commented on video {video_id}, skipping.")
-            return {
-                "status": "already_commented",
-                "video_id": video_id,
-                "comment_id": existing["comment_id"],
-                "posted_at": existing["posted_at"],
-            }
+            return existing
 
         comment_text = self._format_comment(title, summary, loc)
         return self._post_comment(video_id, comment_text, transcript_id=None)
@@ -139,14 +126,9 @@ class YouTubeCommenterService:
             return None
 
         # Check duplicate
-        existing = self._db.get_yt_comment_by_video_id(video_id)
+        existing = self._check_existing(video_id)
         if existing:
-            logger.info(f"Already commented on video {video_id}, skipping.")
-            return {
-                "status": "already_commented",
-                "video_id": video_id,
-                "comment_id": existing["comment_id"],
-            }
+            return existing
 
         title = transcript.title or ""
         loc = transcript.source.loc if hasattr(transcript, "source") else ""
@@ -200,6 +182,19 @@ class YouTubeCommenterService:
     # Private Methods
     # =========================================================================
 
+    def _check_existing(self, video_id: str) -> Optional[dict]:
+        """Check if a comment already exists for the video and return status payload."""
+        existing = self._db.get_yt_comment_by_video_id(video_id)
+        if existing:
+            logger.info(f"Already commented on video {video_id}, skipping.")
+            return {
+                "status": "already_commented",
+                "video_id": video_id,
+                "comment_id": existing["comment_id"],
+                "posted_at": existing.get("posted_at"),
+            }
+        return None
+
     def _post_comment(
         self, video_id: str, comment_text: str, transcript_id: Optional[str]
     ) -> dict:
@@ -242,11 +237,13 @@ class YouTubeCommenterService:
                 "comment_text": comment_text,
                 "status": "posted",
             }
-            self._db.save_yt_comment(comment_data)
-
-            logger.info(
-                f"Posted comment on video {video_id} (comment: {yt_comment_id})"
-            )
+            saved = self._db.save_yt_comment(comment_data)
+            if not saved:
+                logger.warning(f"Failed to persist comment {yt_comment_id} to database for video {video_id}")
+            else:
+                logger.info(
+                    f"Posted comment on video {video_id} (comment: {yt_comment_id})"
+                )
 
             return {
                 "status": "posted",
@@ -350,8 +347,8 @@ class YouTubeCommenterService:
                     if parsed.path.startswith(prefix):
                         return parsed.path[len(prefix):].split("/")[0] or None
 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to parse URL '{url}': {e}")
 
         return None
 

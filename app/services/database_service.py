@@ -6,8 +6,7 @@ from sqlalchemy.orm import joinedload
 
 from app.database import get_session, is_db_configured
 from app.logging import get_logger
-from app.models import ContentItem, ContentItemSpeaker, ContentSource, PipelineRun, Speaker, Summary, Transcript, YouTubeComment
-
+from app.models import ContentItem, ContentItemSpeaker, ContentSource, ExternalPublication, PipelineRun, Speaker, Summary, Transcript
 logger = get_logger()
 
 # Global singleton instance
@@ -553,10 +552,33 @@ class DatabaseService:
             return None
         try:
             with get_session() as session:
-                obj = YouTubeComment(**comment_data)
+                # We expect comment_data to contain video_id, comment_id, url (or pub_url), and status.
+                # However, ExternalPublication needs a content_item_id.
+                # For this to work, we need to find the content_item_id using the video_id.
+                video_id = comment_data.get("video_id")
+                content_item = None
+                if video_id:
+                    content_item = session.query(ContentItem).filter(ContentItem.external_id == video_id).first()
+                
+                content_item_id = content_item.id if content_item else None
+                if not content_item_id:
+                    logger.warning(f"Could not find content_item for video_id {video_id}. Cannot save comment.")
+                    return None
+                    
+                obj = ExternalPublication(
+                    content_item_id=content_item_id,
+                    platform="youtube",
+                    external_pub_id=comment_data.get("comment_id"),
+                    pub_url=comment_data.get("url") or comment_data.get("pub_url"),
+                    status=comment_data.get("status", "posted")
+                )
                 session.add(obj)
                 session.flush()
-                return obj.to_dict()
+                # Return data in a format compatible with old YouTubeComment
+                res = obj.to_dict()
+                res["video_id"] = video_id
+                res["comment_id"] = res.get("external_pub_id")
+                return res
         except Exception as e:
             logger.error(f"Failed to save YouTube comment: {e}")
             return None
@@ -567,12 +589,22 @@ class DatabaseService:
             return None
         try:
             with get_session() as session:
+                # Find the content item first
+                content_item = session.query(ContentItem).filter(ContentItem.external_id == video_id).first()
+                if not content_item:
+                    return None
+                    
                 obj = (
-                    session.query(YouTubeComment)
-                    .filter_by(video_id=video_id, status="posted")
+                    session.query(ExternalPublication)
+                    .filter_by(content_item_id=content_item.id, platform="youtube", status="posted")
                     .first()
                 )
-                return obj.to_dict() if obj else None
+                if obj:
+                    res = obj.to_dict()
+                    res["video_id"] = video_id
+                    res["comment_id"] = res.get("external_pub_id")
+                    return res
+                return None
         except Exception as e:
             logger.error(f"Failed to get comment for video {video_id}: {e}")
             return None
@@ -586,7 +618,7 @@ class DatabaseService:
         try:
             with get_session() as session:
                 obj = (
-                    session.query(YouTubeComment)
+                    session.query(ExternalPublication)
                     .filter_by(id=comment_db_id)
                     .first()
                 )
@@ -608,13 +640,23 @@ class DatabaseService:
         try:
             with get_session() as session:
                 objs = (
-                    session.query(YouTubeComment)
-                    .order_by(YouTubeComment.created_at.desc())
+                    session.query(ExternalPublication)
+                    .filter_by(platform="youtube")
+                    .order_by(ExternalPublication.published_at.desc())
                     .offset(offset)
                     .limit(limit)
                     .all()
                 )
-                return [obj.to_dict() for obj in objs]
+                # Ensure backward compatibility by mapping keys
+                res = []
+                for obj in objs:
+                    d = obj.to_dict()
+                    d["comment_id"] = obj.external_pub_id
+                    # Need to query external_id from ContentItem
+                    item = session.query(ContentItem).filter_by(id=obj.content_item_id).first()
+                    d["video_id"] = item.external_id if item else None
+                    res.append(d)
+                return res
         except Exception as e:
             logger.error(f"Failed to list YouTube comments: {e}")
             return []
@@ -625,11 +667,13 @@ class DatabaseService:
             return None
         try:
             with get_session() as session:
+                # Escape the video_id for the ILIKE pattern to avoid wildcards
+                escaped_video_id = video_id.replace("%", "\\%").replace("_", "\\_")
                 # media_url typically contains the full YouTube URL
                 obj = (
                     session.query(Transcript)
                     .filter(
-                        Transcript.media_url.ilike(f"%{video_id}%")
+                        Transcript.media_url.ilike(f"%{escaped_video_id}%", escape="\\")
                     )
                     .first()
                 )

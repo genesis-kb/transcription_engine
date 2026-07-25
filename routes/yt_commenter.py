@@ -51,8 +51,8 @@ async def post_comment(request: CommentRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to post comment: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to post comment")
+        raise HTTPException(status_code=500, detail="Internal server error occurred.")
 
 
 @router.post("/comment-with-summary")
@@ -77,8 +77,8 @@ async def post_comment_with_summary(request: CommentWithSummaryRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to post comment: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to post comment")
+        raise HTTPException(status_code=500, detail="Internal server error occurred.")
 
 
 @router.get("/comments")
@@ -112,5 +112,5 @@ async def delete_comment(video_id: str):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to delete comment: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to delete comment")
+        raise HTTPException(status_code=500, detail="Internal server error occurred.")

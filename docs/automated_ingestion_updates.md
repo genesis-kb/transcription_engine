@@ -5,7 +5,7 @@ This document summarizes the changes made to automate the ingestion of YouTube c
 ## 1. Automated Channel Scanning Shortcuts
 
 To quickly fetch and process the latest video from each seeded channel without manual review, the `ChannelScanner` (`app/services/channel_scanner.py`) was modified:
-- **Limited Results**: Hardcoded `max_results = 1` to only fetch the latest video.
+- **Batch Processing**: Configured to fetch up to `max_results = 20` items and process up to `7` new videos per channel per run.
 - **Bypass Classification**: Changed the default parsed video state to `is_technical: True` and `status: "queued"` (from `"pending"`). This allows videos to bypass the LLM classification step and go straight into the transcription queue when the ingestion pipeline runs.
 
 ## 2. Fixed Event Loop Deadlock

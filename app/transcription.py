@@ -1053,11 +1053,14 @@ class Transcription:
                         transcript, video_url
                     )
                     if result:
-                        self.logger.info(
-                            f"Auto-commented on YouTube video: {result.get('video_id', video_url)}"
-                        )
+                        if result.get("status") == "already_commented":
+                            self.logger.info(f"Auto-comment skipped: Already commented on {result.get('video_id')}")
+                        elif result.get("status") == "failed":
+                            self.logger.error(f"Auto-comment failed for {result.get('video_id')}")
+                        else:
+                            self.logger.info(f"Auto-commented on YouTube video: {result.get('video_id', video_url)}")
                 except Exception as e:
-                    self.logger.warning(
+                    self.logger.exception(
                         f"Auto-comment failed (non-fatal): {e}"
                     )
 

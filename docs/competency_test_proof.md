@@ -42,13 +42,11 @@ As the queue was processed, the engine performed the following actions for each 
 
 ## 3. Proof of Execution
 
-Below are screenshots demonstrating the successful execution of the pipeline, including the corrected transcripts and generated summaries.
-
-> [!NOTE]
-> *(Paste screenshots of the terminal output showing the corrected text and summaries from `test_pipeline.py`, or screenshots of the database/API responses here).*
+> [!WARNING]
+> This document is an unverified template. To complete the competency test proof, execute the pipeline and insert the verifiable execution logs or database screenshots below.
 
 ### Corrected Transcriptions
-*(Insert Screenshot Here)*
+*(Pending Verification)*
 
 ### Generated Summaries
-*(Insert Screenshot Here)*
+*(Pending Verification)*

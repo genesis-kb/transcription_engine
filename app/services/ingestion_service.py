@@ -139,7 +139,7 @@ class IngestionService:
 
         # Add to queue
         response = requests.post(
-            f"{server_url}/transcription/add_to_queue/", data=data
+            f"{server_url}/transcription/add_to_queue/", data=data, timeout=30
         )
         response.raise_for_status()
 

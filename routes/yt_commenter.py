@@ -41,6 +41,7 @@ async def post_comment(request: CommentRequest):
     Looks up the transcript in the database by video URL, retrieves the
     summary, and posts it as a top-level YouTube comment.
     """
+    _get_db()
     from app.services.yt_commenter import YouTubeCommenterService
 
     try:
@@ -48,7 +49,7 @@ async def post_comment(request: CommentRequest):
         result = service.comment_on_video(request.video_url)
         return {"status": "success", "data": result}
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to post comment: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -61,6 +62,7 @@ async def post_comment_with_summary(request: CommentWithSummaryRequest):
     Use this endpoint to post a manually provided summary instead of
     looking up the transcript from the database.
     """
+    _get_db()
     from app.services.yt_commenter import YouTubeCommenterService
 
     try:
@@ -100,6 +102,7 @@ async def get_comment_status(video_id: str):
 @router.delete("/comments/{video_id}")
 async def delete_comment(video_id: str):
     """Delete a previously posted comment from YouTube."""
+    _get_db()
     from app.services.yt_commenter import YouTubeCommenterService
 
     try:

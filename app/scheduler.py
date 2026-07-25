@@ -49,5 +49,5 @@ def stop_scheduler():
     global _scheduler
     if _scheduler is not None and _scheduler.running:
         logger.info("Stopping background scheduler...")
-        _scheduler.shutdown(wait=False)
+        _scheduler.shutdown(wait=True)
         logger.info("Background scheduler stopped.")

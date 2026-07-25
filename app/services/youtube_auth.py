@@ -60,24 +60,12 @@ def get_authenticated_youtube_service():
 
     # If still no valid creds, try interactive flow (only works with a TTY)
     if not creds or not creds.valid:
-        if not os.path.exists(client_secrets_file):
-            raise RuntimeError(
-                f"YouTube OAuth not configured. "
-                f"Place your OAuth client secrets at '{client_secrets_file}' "
-                f"and run: python scripts/setup_youtube_oauth.py"
-            )
-        try:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                client_secrets_file, SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-            _save_token(creds, token_file)
-            logger.info("YouTube OAuth authorization complete. Token saved.")
-        except Exception as e:
-            raise RuntimeError(
-                f"YouTube OAuth authorization failed: {e}. "
-                f"Run: python scripts/setup_youtube_oauth.py"
-            )
+        raise RuntimeError(
+            f"YouTube OAuth token missing or invalid. "
+            f"Ensure client secrets exist at '{client_secrets_file}' "
+            f"and run 'python scripts/setup_youtube_oauth.py' manually "
+            f"to authorize the application."
+        )
 
     return build("youtube", "v3", credentials=creds)
 

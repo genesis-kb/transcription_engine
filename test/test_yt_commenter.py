@@ -103,4 +103,4 @@ class TestSlugify:
 
     def test_unicode(self):
         result = _slugify("Café & Bitcoin")
-        assert "caf" in result
+        assert result == "café-bitcoin"

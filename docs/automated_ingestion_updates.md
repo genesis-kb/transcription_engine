@@ -21,16 +21,4 @@ The `IngestionService` (`app/services/ingestion_service.py`) was updated to corr
 - **Enabled Processing**: Explicitly set `"summarize": True` and `"correct": True` to ensure the post-transcription steps execute using the Google API.
 - **Removed Deepgram**: Set `"diarize": False` and removed `"deepgram": True` to fallback to the default local transcription models (Whisper) since Deepgram API keys were not configured.
 
-## 4. Helper Scripts
 
-Two helper scripts were added to the `scripts/` directory to facilitate testing:
-
-### `scripts/seed_channels.py`
-A simple Python script that hits the `/ingestion/channels` API to populate the database with a list of YouTube channels to monitor.
-
-### `scripts/test_pipeline.py`
-A script that orchestrates the entire flow:
-1. Hits `/ingestion/run` to trigger the channel scanner and queue videos.
-2. Hits `/transcription/start/` to begin the transcription worker.
-3. Polls `/transcription/queue/` until transcription is complete.
-4. Fetches and prints the final outputs from `/transcription/corrected/` and `/transcription/summaries/`.

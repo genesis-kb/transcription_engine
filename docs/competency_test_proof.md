@@ -10,7 +10,7 @@ To automate the transcription workflow by taking a list of seeded YouTube channe
 ## 2. Execution Process
 
 ### Step 2.1: Seeding YouTube Channels
-To begin, we decided on a set of target YouTube channels to monitor. We used the `venv/bin/python scripts/seed_channels.py` script to inject these channels into the database via the `/ingestion/channels` API endpoint.
+To begin, we decided on a set of target YouTube channels to monitor. We injected these channels into the database via the `/ingestion/channels` API endpoint.
 
 **Channels Seeded:**
 - Advancing Bitcoin
@@ -25,7 +25,7 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
 ### Step 2.3: Running the Automated Pipeline
-With the channels seeded and the server running, we executed the end-to-end automation script `venv/bin/python scripts/test_pipeline.py`. 
+With the channels seeded and the server running, we executed the end-to-end automation. 
 
 This script sequentially triggered the following automated steps:
 1. **Channel Scanning (`/ingestion/run`)**: The pipeline scanned the seeded channels, fetched the single most recent video from each, and automatically approved them for transcription (bypassing the manual LLM classification phase).

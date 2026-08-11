@@ -139,5 +139,5 @@ test_feats/
 logs/
 metadata/
 scripts/
-.github/.DS_Store
+.DS_Store
 input/audiobooks/

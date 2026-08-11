@@ -128,7 +128,7 @@ class IngestionService:
         data = {
             "source": url,
             "loc": source_slug,
-            "deepgram": True,
+            "asr_provider": settings.ASR_PROVIDER,
             "diarize": True,
             "markdown": True,
             "correct": True,

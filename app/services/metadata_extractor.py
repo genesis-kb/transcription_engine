@@ -1,10 +1,9 @@
 import json
+import os
 import time
 
-from google import genai
-from google.genai.types import GenerateContentConfig
+import ollama
 
-from app.config import settings
 from app.logging import get_logger
 from app.transcript import Transcript
 
@@ -15,15 +14,15 @@ logger = get_logger()
 class MetadataExtractorService:
     """
     Extracts structured metadata (speakers, conference, topics) from YouTube
-    video metadata using a single Gemini LLM call per video.
+    video metadata using a single Gemma LLM call per video via Ollama.
 
     Runs as a processing service in the transcription pipeline, before
     correction and summarization, so extracted metadata enriches those steps.
     """
 
-    def __init__(self, model="gemini-3-flash-preview"):
-        self.model = model
-        self._client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+    def __init__(self):
+        self.model = os.getenv("GEMMA_MODEL", "gemma3:4b")
+        self._ollama = ollama
 
     def process(self, transcript: Transcript, **kwargs):
         """
@@ -55,7 +54,10 @@ class MetadataExtractorService:
         prompt = self._build_prompt(title, description, channel_name, tags)
 
         try:
-            response = self._call_with_retry(prompt, max_tokens=1024)
+            logger.info(f"(metadata_extractor) Loading model '{self.model}'...")
+            self._load_gemma_model()
+            
+            response = self._call_with_retry(prompt)
             extracted = self._parse_response(response)
 
             # Update speakers only if they weren't manually provided
@@ -84,22 +86,37 @@ class MetadataExtractorService:
                 f"Metadata extraction failed for '{title}': {e}. "
                 f"Existing metadata preserved."
             )
+        finally:
+            self._unload_gemma_model()
 
-    def _call_with_retry(self, prompt, max_tokens=1024, max_retries=4):
-        """Call Gemini with exponential backoff on 503/429 errors."""
-        config = GenerateContentConfig(max_output_tokens=max_tokens)
+    def _load_gemma_model(self):
+        """Pre-load the model into memory with infinite keep_alive."""
+        try:
+            self._ollama.generate(model=self.model, keep_alive=-1)
+        except Exception as e:
+            logger.warning(f"Failed to pre-load Ollama model {self.model}: {e}")
+
+    def _unload_gemma_model(self):
+        """Unload the model from memory."""
+        try:
+            logger.info(f"(metadata_extractor) Unloading model '{self.model}'...")
+            self._ollama.generate(model=self.model, keep_alive=0)
+        except Exception as e:
+            logger.warning(f"Failed to unload Ollama model {self.model}: {e}")
+
+    def _call_with_retry(self, prompt, max_retries=3):
+        """Call Gemma via Ollama with retries."""
         for attempt in range(max_retries):
             try:
-                response = self._client.models.generate_content(
+                response = self._ollama.chat(
                     model=self.model,
-                    contents=prompt,
-                    config=config,
+                    messages=[{"role": "user", "content": prompt}],
                 )
-                return response.text
+                return response.get("message", {}).get("content", "").strip()
             except Exception as e:
-                if ("503" in str(e) or "429" in str(e)) and attempt < max_retries - 1:
-                    wait = 2 ** attempt * 5  # 5, 10, 20, 40 seconds
-                    logger.warning(f"Gemini rate limited (attempt {attempt+1}), waiting {wait}s...")
+                if attempt < max_retries - 1:
+                    wait = 2 ** attempt * 5
+                    logger.warning(f"Ollama rate limited/failed (attempt {attempt+1}), waiting {wait}s...")
                     time.sleep(wait)
                 else:
                     raise
@@ -131,13 +148,13 @@ class MetadataExtractorService:
             f"Tags: {tags_str}\n"
             f"Description:\n{desc_truncated}\n"
             f"--- End Metadata ---\n\n"
-            "Respond with a JSON object:\n"
+            "Respond with a JSON object ONLY, nothing else. DO NOT use markdown code blocks.\n"
             '{"speakers": ["Name1", "Name2"], "conference": "Event Name", "topics": ["Topic1", "Topic2"]}\n\n'
             "Rules:\n"
             "- If speaker names cannot be determined, return an empty speakers array\n"
             "- For conference, prefer the channel name as the event identifier\n"
             "- Return 2-5 specific topics, ordered by relevance\n"
-            "- Do NOT wrap in markdown code blocks, return raw JSON only\n"
+            "- Return raw JSON only, starting with '{' and ending with '}'.\n"
         )
         return prompt
 
@@ -149,7 +166,18 @@ class MetadataExtractorService:
             if text.startswith("```"):
                 # Remove markdown wrapper
                 lines = text.split("\n")
-                text = "\n".join(lines[1:-1])
+                # Find where json actually starts if there's text before it
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines[-1].startswith("```"):
+                    lines = lines[:-1]
+                text = "\n".join(lines).strip()
+            
+            # Find the first { and last } in case it wrapped text around it
+            start_idx = text.find("{")
+            end_idx = text.rfind("}")
+            if start_idx != -1 and end_idx != -1:
+                text = text[start_idx:end_idx+1]
 
             result = json.loads(text)
 

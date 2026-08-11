@@ -1,6 +1,7 @@
 import base64
 import configparser
 import os
+import urllib.parse
 
 from dotenv import load_dotenv
 
@@ -22,6 +23,10 @@ class Settings:
         self.TSTBTC_METADATA_DIR = os.getenv("TSTBTC_METADATA_DIR")
         # yt-dlp cookies file for YouTube authentication
         self.YT_COOKIES_FILE = os.getenv("YT_COOKIES_FILE", "cookies.txt")
+        # Global proxy settings
+        self.USE_PROXY = str(os.getenv("USE_PROXY", "false")).lower() == "true"
+        self.PROXY_URL = os.getenv("PROXY_URL", "")
+            
         # GitHub API settings
         self.GITHUB_REPO_OWNER = os.getenv(
             "GITHUB_REPO_OWNER", "bitcointranscripts"
@@ -39,6 +44,24 @@ class Settings:
         # Load configuration from config.ini
         self.PROFILE = os.getenv("PROFILE", "DEFAULT")
         self.config = read_config(self.PROFILE)
+
+        if self.USE_PROXY and self.PROXY_URL:
+            os.environ["http_proxy"] = self.PROXY_URL
+            os.environ["https_proxy"] = self.PROXY_URL
+            os.environ["HTTP_PROXY"] = self.PROXY_URL
+            os.environ["HTTPS_PROXY"] = self.PROXY_URL
+            
+            # Prevent local traffic from being proxied
+            no_proxy_list = ["localhost", "127.0.0.1", "::1", "server"]
+            if self.TRANSCRIPTION_SERVER_URL:
+                try:
+                    parsed_url = urllib.parse.urlparse(self.TRANSCRIPTION_SERVER_URL)
+                    if parsed_url.hostname and parsed_url.hostname not in no_proxy_list:
+                        no_proxy_list.append(parsed_url.hostname)
+                except Exception:
+                    pass
+            os.environ["no_proxy"] = os.getenv("NO_PROXY", ",".join(no_proxy_list))
+            os.environ["NO_PROXY"] = os.environ["no_proxy"]
 
     def get_config_overview(self):
         overview = "Configuration Settings:\n"
@@ -130,11 +153,18 @@ class Settings:
 
     @property
     def GOOGLE_API_KEY(self):
-        return self._get_env_variable("GOOGLE_API_KEY")
+        return os._get_env_variable("GOOGLE_API_KEY")
 
     @property
     def CLAUDE_API_KEY(self):
         return self._get_env_variable("CLAUDE_API_KEY")
+
+    @property
+    def HF_TOKEN(self):
+        return self._get_env_variable(
+            "HF_TOKEN",
+            "To use VibeVoice you need to define an 'HF_TOKEN' in your .env file",
+        )
 
     @property
     def DATABASE_URL(self):

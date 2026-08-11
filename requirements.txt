@@ -5,6 +5,7 @@ pytest-cov==6.0.0
 python-dotenv==1.0.0
 pytube==12.1.2
 requests==2.32.3
+PySocks==1.7.1
 setuptools==45.2.0
 static_ffmpeg==2.3
 ffmpeg-python==0.2.0
@@ -31,3 +32,12 @@ pydub>=0.25
 audioop-lts>=0.2; python_version >= '3.13'
 num2words>=0.5.13
 nltk>=3.9.4
+beautifulsoup4
+python-dateutil
+ollama
+pydantic
+soundfile
+torch
+transformers
+openai-whisper
+microsocks

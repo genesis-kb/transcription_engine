@@ -9,7 +9,7 @@ YouTube Video URL
        |
   [Preprocess] --> Download video, extract audio (FFmpeg)
        |
-  [Transcribe] --> STT (Whisper / Deepgram / SmallestAI)
+  [Transcribe] --> STT (Whisper / Deepgram / SmallestAI / VibeVoice)
        |
   [Metadata Extraction] --> Gemini LLM (speakers, conference, topics)
        |
@@ -39,6 +39,7 @@ youtube_channels (DB)
 | **Whisper** | Local (OpenAI) | Offline, privacy-sensitive |
 | **Deepgram** | Cloud API | Fast, accurate, diarization |
 | **SmallestAI** | Cloud API | Multi-speaker, emotion detection |
+| **VibeVoice** | Open-source | SOTA performance, privacy-focused |
 
 ## LLM Services (Gemini)
 
@@ -102,7 +103,6 @@ Required environment variables:
 | Variable | Purpose |
 |----------|---------|
 | `DATABASE_URL` | PostgreSQL connection string (local Docker or AWS RDS) |
-| `GOOGLE_API_KEY` | Gemini API for correction, summarization, classification, metadata extraction |
 | `YOUTUBE_API_KEY` | YouTube Data API v3 for channel scanning |
 | `DEEPGRAM_API_KEY` | Deepgram STT (if using Deepgram) |
 | `SMALLEST_API_KEY` | SmallestAI STT (if using SmallestAI) |
@@ -181,6 +181,18 @@ With SmallestAI instead:
 ```bash
 tstbtc transcribe "https://www.youtube.com/watch?v=VIDEO_ID" \
   --smallestai \
+  --diarize \
+  --markdown \
+  --summarize \
+  --correct \
+  --llm-provider google \
+  --loc "tabconf" \
+  --username "your_name"
+```
+
+```bash
+tstbtc transcribe "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --vibevoice \
   --diarize \
   --markdown \
   --summarize \

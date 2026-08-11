@@ -83,7 +83,7 @@ def configure_metadata_given_from_JSON(source, from_json=None):
             entry["media"] for entry in excluded_media
         ]
         # transcription service output
-        services = ["whisper", "deepgram"]
+        services = ["whisper", "deepgram", "smallestai", "vibevoice"]
         for service in services:
             key = f"{service}_output"
             metadata[key] = source.get(key, None)

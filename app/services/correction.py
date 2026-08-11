@@ -28,6 +28,9 @@ class CorrectionService:
             self._client = genai.Client(api_key=settings.GOOGLE_API_KEY)
             if self.model == "gpt-4o":  # Default overwrite for google
                 self.model = "gemini-3-flash-preview"
+        elif self.provider == "gemma":
+            import ollama
+            self._ollama = ollama
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
 
@@ -57,6 +60,18 @@ class CorrectionService:
 
         return chunks
 
+    def _load_gemma_model(self):
+        """Pull model into Ollama GPU memory and pin it."""
+        logger.info(f"(correction/gemma) Loading model '{self.model}'...")
+        self._ollama.chat(model=self.model, messages=[], keep_alive=-1)
+        logger.info("(correction/gemma) Model loaded.")
+
+    def _unload_gemma_model(self):
+        """Evict model from Ollama GPU memory."""
+        logger.info(f"(correction/gemma) Unloading model '{self.model}'...")
+        self._ollama.chat(model=self.model, messages=[], keep_alive=0)
+        logger.info("(correction/gemma) Model unloaded.")
+
     def process(self, transcript: Transcript, **kwargs):
         logger.info(
             f"Correcting transcript with {self.provider} (model: {self.model})..."
@@ -78,16 +93,20 @@ class CorrectionService:
                 f"Splitting transcript into {num_chunks} chunks for processing..."
             )
 
-        corrected_chunks = []
-        for i, chunk in enumerate(chunks, 1):
-            if num_chunks > 1:
-                logger.info(
-                    f"Processing chunk {i}/{num_chunks} ({len(chunk)} chars)..."
-                )
+        if self.provider == "gemma":
+            self._load_gemma_model()
 
-            prompt = self._build_enhanced_prompt(
-                chunk, keywords, metadata, global_context
-            )
+        corrected_chunks = []
+        try:
+            for i, chunk in enumerate(chunks, 1):
+                if num_chunks > 1:
+                    logger.info(
+                        f"Processing chunk {i}/{num_chunks} ({len(chunk)} chars)..."
+                    )
+
+                prompt = self._build_enhanced_prompt(
+                    chunk, keywords, metadata, global_context
+                )
 
             try:
                 if self.provider == "openai":
@@ -99,6 +118,9 @@ class CorrectionService:
                     corrected_text = response.choices[0].message.content
                 elif self.provider == "google":
                     corrected_text = self._call_with_retry(prompt, max_tokens=16384)
+                elif self.provider == "gemma":
+                    response = self._ollama.generate(model=self.model, prompt=prompt)
+                    corrected_text = response.get("response", chunk).strip()
 
                 # Validate output length — reject truncated responses
                 if len(corrected_text) < len(chunk) * MIN_LENGTH_RATIO:
@@ -127,6 +149,9 @@ class CorrectionService:
             # Rate limit between chunks to avoid 429/503
             if self.provider == "google" and i < num_chunks:
                 time.sleep(2)
+        finally:
+            if self.provider == "gemma":
+                self._unload_gemma_model()
 
         # Combine all corrected chunks
         transcript.outputs["corrected_text"] = "\n\n".join(corrected_chunks)

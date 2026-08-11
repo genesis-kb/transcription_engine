@@ -216,7 +216,7 @@ correct_transcript = click.option(
 )
 llm_provider = click.option(
     "--llm-provider",
-    type=click.Choice(["openai", "google", "claude"]),
+    type=click.Choice(["openai", "google", "claude", "gemma"]),
     default=settings.config.get("llm_provider", "openai"),
     help="LLM provider for correction and summarization.",
 )

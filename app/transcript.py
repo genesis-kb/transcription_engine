@@ -90,6 +90,8 @@ def _yt_opts(**extra):
     opts = {**extra}
     if settings.YT_COOKIES_FILE and os.path.exists(settings.YT_COOKIES_FILE):
         opts["cookiefile"] = settings.YT_COOKIES_FILE
+    if settings.USE_PROXY and settings.PROXY_URL:
+        opts["proxy"] = settings.PROXY_URL
     opts.setdefault("js_runtimes", {"node": {}})
     opts.setdefault("remote_components", {"ejs:github"})
     return opts

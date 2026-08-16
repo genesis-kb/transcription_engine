@@ -11,6 +11,7 @@ from app.services.audiobook.textproc import (
 
 # ── Group 1: clean_text ──────────────────────────────────────────────
 
+@pytest.mark.unit
 class TestCleanText:
     def test_strips_bracketed_timestamp(self):
         assert clean_text("[00:01] Hello world") == "Hello world"
@@ -46,6 +47,7 @@ class TestCleanText:
 
 # ── Group 2: chunk_split ─────────────────────────────────────────────
 
+@pytest.mark.unit
 class TestChunkSplit:
     def test_short_text_single_chunk(self):
         result = chunk_split("Hello world.", 100)
@@ -81,6 +83,7 @@ class TestChunkSplit:
 
 # ── Group 3: normalize ───────────────────────────────────────────────
 
+@pytest.mark.unit
 class TestNormalize:
     def test_money_expansion(self):
         result = normalize("$1.5B")
@@ -106,6 +109,7 @@ class TestNormalize:
 
 # ── Group 4: parse_diarization ────────────────────────────────────────
 
+@pytest.mark.unit
 class TestParseDiarization:
     def test_no_speaker_tags(self):
         result = parse_diarization("Hello world")

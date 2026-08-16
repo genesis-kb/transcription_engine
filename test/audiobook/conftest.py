@@ -1,13 +1,11 @@
 """Shared fixtures for audiobook tests."""
 
-import io
 import shutil
 import tempfile
 from pathlib import Path
 from unittest import mock
 
 import pytest
-from pydub import AudioSegment
 
 
 @pytest.fixture
@@ -19,16 +17,7 @@ def tmp_dir():
 
 
 @pytest.fixture
-def fake_mp3_bytes():
-    """Minimal valid MP3 bytes (1-second silence)."""
-    seg = AudioSegment.silent(duration=1000)
-    buf = io.BytesIO()
-    seg.export(buf, format="mp3")
-    return buf.getvalue()
-
-
-@pytest.fixture
-def sample_cfg():
+def sample_cfg(tmp_dir):
     """Minimal pipeline config dict matching audiobook_config.yaml shape."""
     return {
         "tts": {
@@ -50,8 +39,8 @@ def sample_cfg():
             "target_dbfs": -20.0,
         },
         "paths": {
-            "output_dir": "outputs/audiobooks",
-            "cache_dir": ".cache/audiobooks",
+            "output_dir": str(tmp_dir / "outputs" / "audiobooks"),
+            "cache_dir": str(tmp_dir / ".cache" / "audiobooks"),
         },
         "keys": {
             "openai": "test-openai-key",

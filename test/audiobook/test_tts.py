@@ -11,6 +11,7 @@ from app.services.audiobook.tts import (
 
 # ── Group 7: make_provider ───────────────────────────────────────────
 
+@pytest.mark.unit
 class TestMakeProvider:
     def test_deepgram_provider(self, sample_cfg):
         p = make_provider(sample_cfg)
@@ -39,6 +40,7 @@ class TestMakeProvider:
 
 # ── Group 8: apply_lexicon_fallback ──────────────────────────────────
 
+@pytest.mark.unit
 class TestLexiconFallback:
     def _make_provider(self, lexicon):
         return DeepgramTTS(
@@ -54,9 +56,10 @@ class TestLexiconFallback:
         assert "dee-fye" in p.apply_lexicon_fallback("defi rocks")
 
     def test_longer_key_first(self):
-        p = self._make_provider({"BTC": "bitcoin", "BTCUSD": "bitcoin-USD"})
-        result = p.apply_lexicon_fallback("BTCUSD is a pair")
-        assert "bitcoin-USD" in result
+        p = self._make_provider({"Bitcoin": "BTC", "Bitcoin Cash": "BCH"})
+        result = p.apply_lexicon_fallback("I like Bitcoin Cash")
+        assert "BCH" in result
+        assert "BTC" not in result
 
     def test_empty_lexicon(self):
         p = self._make_provider({})

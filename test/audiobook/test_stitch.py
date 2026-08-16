@@ -44,10 +44,11 @@ class TestBuildChapter:
         assert len(seg) > 0
 
     def test_multiple_chunks_have_gaps(self, stitch_cfg):
-        chunks = [_make_audio_bytes(300), _make_audio_bytes(300)]
+        stitch_cfg["tts"]["format"] = "wav"
+        chunks = [_make_audio_bytes(300, fmt="wav"), _make_audio_bytes(300, fmt="wav")]
         seg = build_chapter(chunks, stitch_cfg)
-        # Two 300ms chunks + 200ms gap = at least 800ms
-        assert len(seg) >= 800
+        # Two 300ms chunks + 200ms gap = exactly 800ms
+        assert len(seg) == 800
 
 
 class TestExportBook:

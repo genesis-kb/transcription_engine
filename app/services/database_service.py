@@ -6,8 +6,7 @@ from sqlalchemy.orm import joinedload
 
 from app.database import get_session, is_db_configured
 from app.logging import get_logger
-from app.models import ContentItem, ContentItemSpeaker, ContentSource, PipelineRun, Speaker, Summary, Transcript
-
+from app.models import ContentItem, ContentItemSpeaker, ContentSource, ExternalPublication, PipelineRun, Speaker, Summary, Transcript
 logger = get_logger()
 
 # Global singleton instance
@@ -542,6 +541,146 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Failed to list pipeline runs: {e}")
             return []
+
+    # =========================================================================
+    # YouTube Comments (Auto-Commenter)
+    # =========================================================================
+
+    def save_yt_comment(self, comment_data: dict) -> Optional[dict]:
+        """Insert a new YouTube comment record."""
+        if not self.is_available:
+            return None
+        try:
+            with get_session() as session:
+                # We expect comment_data to contain video_id, comment_id, url (or pub_url), and status.
+                # However, ExternalPublication needs a content_item_id.
+                # For this to work, we need to find the content_item_id using the video_id.
+                video_id = comment_data.get("video_id")
+                content_item = None
+                if video_id:
+                    content_item = session.query(ContentItem).filter(ContentItem.external_id == video_id).first()
+                
+                content_item_id = content_item.id if content_item else None
+                if not content_item_id:
+                    logger.warning(f"Could not find content_item for video_id {video_id}. Cannot save comment.")
+                    return None
+                    
+                obj = ExternalPublication(
+                    content_item_id=content_item_id,
+                    platform="youtube",
+                    external_pub_id=comment_data.get("comment_id"),
+                    pub_url=comment_data.get("url") or comment_data.get("pub_url"),
+                    status=comment_data.get("status", "posted")
+                )
+                session.add(obj)
+                session.flush()
+                # Return data in a format compatible with old YouTubeComment
+                res = obj.to_dict()
+                res["video_id"] = video_id
+                res["comment_id"] = res.get("external_pub_id")
+                return res
+        except Exception as e:
+            logger.error(f"Failed to save YouTube comment: {e}")
+            return None
+
+    def get_yt_comment_by_video_id(self, video_id: str) -> Optional[dict]:
+        """Look up a posted comment by YouTube video ID."""
+        if not self.is_available:
+            return None
+        try:
+            with get_session() as session:
+                # Find the content item first
+                content_item = session.query(ContentItem).filter(ContentItem.external_id == video_id).first()
+                if not content_item:
+                    return None
+                    
+                obj = (
+                    session.query(ExternalPublication)
+                    .filter_by(content_item_id=content_item.id, platform="youtube", status="posted")
+                    .first()
+                )
+                if obj:
+                    res = obj.to_dict()
+                    res["video_id"] = video_id
+                    res["comment_id"] = res.get("external_pub_id")
+                    return res
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get comment for video {video_id}: {e}")
+            return None
+
+    def update_yt_comment_status(
+        self, comment_db_id: str, status: str
+    ) -> Optional[dict]:
+        """Update the status of a comment record (e.g. 'deleted')."""
+        if not self.is_available:
+            return None
+        try:
+            with get_session() as session:
+                obj = (
+                    session.query(ExternalPublication)
+                    .filter_by(id=comment_db_id)
+                    .first()
+                )
+                if not obj:
+                    return None
+                obj.status = status
+                session.flush()
+                return obj.to_dict()
+        except Exception as e:
+            logger.error(f"Failed to update comment status: {e}")
+            return None
+
+    def list_yt_comments(
+        self, limit: int = 50, offset: int = 0
+    ) -> list:
+        """List all YouTube comment records."""
+        if not self.is_available:
+            return []
+        try:
+            with get_session() as session:
+                objs = (
+                    session.query(ExternalPublication)
+                    .filter_by(platform="youtube")
+                    .order_by(ExternalPublication.published_at.desc())
+                    .offset(offset)
+                    .limit(limit)
+                    .all()
+                )
+                # Ensure backward compatibility by mapping keys
+                res = []
+                for obj in objs:
+                    d = obj.to_dict()
+                    d["comment_id"] = obj.external_pub_id
+                    # Need to query external_id from ContentItem
+                    item = session.query(ContentItem).filter_by(id=obj.content_item_id).first()
+                    d["video_id"] = item.external_id if item else None
+                    res.append(d)
+                return res
+        except Exception as e:
+            logger.error(f"Failed to list YouTube comments: {e}")
+            return []
+
+    def get_transcript_by_video_id(self, video_id: str) -> Optional[dict]:
+        """Look up a transcript by YouTube video ID (matches media_url)."""
+        if not self.is_available:
+            return None
+        try:
+            with get_session() as session:
+                # Escape the video_id for the ILIKE pattern to avoid wildcards
+                escaped_video_id = video_id.replace("%", "\\%").replace("_", "\\_")
+                # media_url typically contains the full YouTube URL
+                obj = (
+                    session.query(Transcript)
+                    .filter(
+                        Transcript.media_url.ilike(f"%{escaped_video_id}%", escape="\\")
+                    )
+                    .first()
+                )
+                return obj.to_dict() if obj else None
+        except Exception as e:
+            logger.error(f"Failed to look up transcript for video {video_id}: {e}")
+            return None
 
 
 def get_database_service() -> DatabaseService:

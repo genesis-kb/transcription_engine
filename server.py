@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -6,17 +7,28 @@ import logging
 
 from app.exceptions import DuplicateSourceError
 from app.logging import configure_logger
+from app.scheduler import start_scheduler, stop_scheduler
 from routes.curator import router as curator_router
 from routes.ingestion import router as ingestion_router
 from routes.media import router as media_router
 from routes.transcription import router as transcription_router
 from routes.audiobooks import router as audiobooks_router
+from routes.yt_commenter import router as yt_commenter_router
 
 # Ensure our app logger is configured to output to stdout
 configure_logger(log_level=logging.INFO)
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    start_scheduler()
+    yield
+    # Shutdown
+    stop_scheduler()
+
+
+app = FastAPI(lifespan=lifespan)
 
 origins = [
     "http://localhost:3000",
@@ -53,3 +65,4 @@ app.include_router(curator_router, prefix="/curator")
 app.include_router(media_router, prefix="/media")
 app.include_router(ingestion_router, prefix="/ingestion")
 app.include_router(audiobooks_router, prefix="/audiobooks")
+app.include_router(yt_commenter_router, prefix="/yt-bot")

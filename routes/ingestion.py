@@ -45,7 +45,7 @@ def _get_db():
 
 
 @router.post("/run")
-async def run_full_pipeline():
+def run_full_pipeline():
     """Run the full ingestion pipeline: scan → classify → queue."""
     from app.services.ingestion_service import IngestionService
 

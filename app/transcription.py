@@ -1039,6 +1039,31 @@ class Transcription:
             if db.is_available:
                 db.save_from_transcript_object(transcript)
 
+        # Auto-comment summary on YouTube video
+        if transcript.summary and hasattr(transcript, "source"):
+            video_url = transcript.source.source_file
+            if video_url and (
+                "youtube.com" in video_url or "youtu.be" in video_url
+            ):
+                try:
+                    from app.services.yt_commenter import YouTubeCommenterService
+
+                    commenter = YouTubeCommenterService()
+                    result = commenter.comment_from_transcript_object(
+                        transcript, video_url
+                    )
+                    if result:
+                        if result.get("status") == "already_commented":
+                            self.logger.info(f"Auto-comment skipped: Already commented on {result.get('video_id')}")
+                        elif result.get("status") == "failed":
+                            self.logger.error(f"Auto-comment failed for {result.get('video_id')}")
+                        else:
+                            self.logger.info(f"Auto-commented on YouTube video: {result.get('video_id', video_url)}")
+                except Exception as e:
+                    self.logger.exception(
+                        f"Auto-comment failed (non-fatal): {e}"
+                    )
+
     def clean_up(self):
         self.logger.debug("Cleaning up...")
         application.clean_up(self.tmp_dir)

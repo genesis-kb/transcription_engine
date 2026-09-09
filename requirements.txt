@@ -31,3 +31,6 @@ pydub>=0.25
 audioop-lts>=0.2; python_version >= '3.13'
 num2words>=0.5.13
 nltk>=3.9.4
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.2.0
+apscheduler==3.10.4

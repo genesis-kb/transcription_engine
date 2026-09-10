@@ -53,27 +53,21 @@ def mock_transcript_with_speakers():
     return transcript
 
 
-def _mock_genai_client(response_text):
-    """Helper to set up a mock genai.Client that returns the given text."""
-    mock_client = mock.MagicMock()
-    mock_client.models.generate_content.return_value.text = response_text
-    return mock_client
-
-
 class TestMetadataExtractorService:
-    @mock.patch("app.services.metadata_extractor.genai")
-    @mock.patch("app.services.metadata_extractor.settings")
+    @mock.patch("app.services.metadata_extractor.ollama")
     def test_process_extracts_metadata(
-        self, mock_settings, mock_genai, mock_transcript
+        self, mock_ollama, mock_transcript
     ):
         """Test that process() correctly extracts and sets metadata."""
-        mock_settings.GOOGLE_API_KEY = "test-key"
-
-        mock_client = _mock_genai_client(
-            '{"speakers": ["Pieter Wuille"], "conference": "Bitcoin 2021", '
-            '"topics": ["Taproot", "Schnorr Signatures", "Script Upgrades"]}'
-        )
-        mock_genai.Client.return_value = mock_client
+        mock_ollama.chat.return_value = {
+            "message": {
+                "content": (
+                    '{"speakers": ["Pieter Wuille"], "conference": "Bitcoin 2021", '
+                    '"topics": ["Taproot", "Schnorr Signatures", "Script Upgrades"]}'
+                )
+            }
+        }
+        mock_ollama.generate.return_value = {}
 
         service = MetadataExtractorService()
         service.process(mock_transcript)
@@ -86,37 +80,34 @@ class TestMetadataExtractorService:
             "Script Upgrades",
         ]
 
-    @mock.patch("app.services.metadata_extractor.genai")
-    @mock.patch("app.services.metadata_extractor.settings")
+    @mock.patch("app.services.metadata_extractor.ollama")
     def test_process_skips_no_youtube(
-        self, mock_settings, mock_genai, mock_transcript_no_youtube
+        self, mock_ollama, mock_transcript_no_youtube
     ):
         """Test that process() skips when no YouTube metadata is present."""
-        mock_settings.GOOGLE_API_KEY = "test-key"
-
-        mock_client = mock.MagicMock()
-        mock_genai.Client.return_value = mock_client
+        mock_ollama.generate.return_value = {}
 
         service = MetadataExtractorService()
         service.process(mock_transcript_no_youtube)
 
         # Should not call the LLM at all
-        mock_client.models.generate_content.assert_not_called()
+        mock_ollama.chat.assert_not_called()
         # Speakers should remain as manually set
         assert mock_transcript_no_youtube.source.speakers == ["Manual Speaker"]
 
-    @mock.patch("app.services.metadata_extractor.genai")
-    @mock.patch("app.services.metadata_extractor.settings")
+    @mock.patch("app.services.metadata_extractor.ollama")
     def test_process_preserves_manual_speakers(
-        self, mock_settings, mock_genai, mock_transcript_with_speakers
+        self, mock_ollama, mock_transcript_with_speakers
     ):
         """Test that manually-set speakers are NOT overwritten."""
-        mock_settings.GOOGLE_API_KEY = "test-key"
-
-        mock_client = _mock_genai_client(
-            '{"speakers": ["LLM Extracted Speaker"], "conference": "Some Event", "topics": ["Mining"]}'
-        )
-        mock_genai.Client.return_value = mock_client
+        mock_ollama.chat.return_value = {
+            "message": {
+                "content": (
+                    '{"speakers": ["LLM Extracted Speaker"], "conference": "Some Event", "topics": ["Mining"]}'
+                )
+            }
+        }
+        mock_ollama.generate.return_value = {}
 
         service = MetadataExtractorService()
         service.process(mock_transcript_with_speakers)
@@ -129,19 +120,13 @@ class TestMetadataExtractorService:
         assert mock_transcript_with_speakers.source.conference == "Some Event"
         assert mock_transcript_with_speakers.source.topics == ["Mining"]
 
-    @mock.patch("app.services.metadata_extractor.genai")
-    @mock.patch("app.services.metadata_extractor.settings")
+    @mock.patch("app.services.metadata_extractor.ollama")
     def test_process_handles_llm_failure(
-        self, mock_settings, mock_genai, mock_transcript
+        self, mock_ollama, mock_transcript
     ):
         """Test that LLM failure leaves existing metadata intact."""
-        mock_settings.GOOGLE_API_KEY = "test-key"
-
-        mock_client = mock.MagicMock()
-        mock_client.models.generate_content.side_effect = Exception(
-            "API Error"
-        )
-        mock_genai.Client.return_value = mock_client
+        mock_ollama.chat.side_effect = Exception("API Error")
+        mock_ollama.generate.return_value = {}
 
         service = MetadataExtractorService()
         service.process(mock_transcript)
@@ -151,16 +136,15 @@ class TestMetadataExtractorService:
         assert mock_transcript.source.conference is None
         assert mock_transcript.source.topics == []
 
-    @mock.patch("app.services.metadata_extractor.genai")
-    @mock.patch("app.services.metadata_extractor.settings")
+    @mock.patch("app.services.metadata_extractor.ollama")
     def test_process_handles_malformed_json(
-        self, mock_settings, mock_genai, mock_transcript
+        self, mock_ollama, mock_transcript
     ):
         """Test graceful handling of malformed LLM JSON response."""
-        mock_settings.GOOGLE_API_KEY = "test-key"
-
-        mock_client = _mock_genai_client("not valid json {{")
-        mock_genai.Client.return_value = mock_client
+        mock_ollama.chat.return_value = {
+            "message": {"content": "not valid json {{"}
+        }
+        mock_ollama.generate.return_value = {}
 
         service = MetadataExtractorService()
         service.process(mock_transcript)

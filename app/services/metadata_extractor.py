@@ -92,7 +92,7 @@ class MetadataExtractorService:
     def _load_gemma_model(self):
         """Pre-load the model into memory with infinite keep_alive."""
         try:
-            self._ollama.generate(model=self.model, keep_alive=-1)
+            self._ollama.generate(model=self.model, prompt="", keep_alive=-1)
         except Exception as e:
             logger.warning(f"Failed to pre-load Ollama model {self.model}: {e}")
 
@@ -100,7 +100,7 @@ class MetadataExtractorService:
         """Unload the model from memory."""
         try:
             logger.info(f"(metadata_extractor) Unloading model '{self.model}'...")
-            self._ollama.generate(model=self.model, keep_alive=0)
+            self._ollama.generate(model=self.model, prompt="", keep_alive=0)
         except Exception as e:
             logger.warning(f"Failed to unload Ollama model {self.model}: {e}")
 

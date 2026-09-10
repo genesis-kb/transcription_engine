@@ -21,6 +21,7 @@ install_requires = read_requirements("requirements.txt")
 # Define extras and their requirements
 extras_require = {
     "whisper": read_requirements("requirements-whisper.txt"),
+    "vibevoice": read_requirements("requirements-vibevoice.txt"),
 }
 
 # Add an "all" extra that includes all optional dependencies

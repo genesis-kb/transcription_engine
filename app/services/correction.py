@@ -108,47 +108,47 @@ class CorrectionService:
                     chunk, keywords, metadata, global_context
                 )
 
-            try:
-                if self.provider == "openai":
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=[{"role": "user", "content": prompt}],
-                        timeout=300,  # 5 minute timeout
-                    )
-                    corrected_text = response.choices[0].message.content
-                elif self.provider == "google":
-                    corrected_text = self._call_with_retry(prompt, max_tokens=16384)
-                elif self.provider == "gemma":
-                    response = self._ollama.generate(model=self.model, prompt=prompt)
-                    corrected_text = response.get("response", chunk).strip()
+                try:
+                    if self.provider == "openai":
+                        response = self.client.chat.completions.create(
+                            model=self.model,
+                            messages=[{"role": "user", "content": prompt}],
+                            timeout=300,  # 5 minute timeout
+                        )
+                        corrected_text = response.choices[0].message.content
+                    elif self.provider == "google":
+                        corrected_text = self._call_with_retry(prompt, max_tokens=16384)
+                    elif self.provider == "gemma":
+                        response = self._ollama.generate(model=self.model, prompt=prompt)
+                        corrected_text = response.get("response", chunk).strip()
 
-                # Validate output length — reject truncated responses
-                if len(corrected_text) < len(chunk) * MIN_LENGTH_RATIO:
-                    logger.warning(
-                        f"[CORRECTION TRUNCATED] chunk {i}/{num_chunks}: "
-                        f"output {len(corrected_text)} chars vs input {len(chunk)} chars "
-                        f"({len(corrected_text)/len(chunk):.0%}). Using original."
+                    # Validate output length — reject truncated responses
+                    if len(corrected_text) < len(chunk) * MIN_LENGTH_RATIO:
+                        logger.warning(
+                            f"[CORRECTION TRUNCATED] chunk {i}/{num_chunks}: "
+                            f"output {len(corrected_text)} chars vs input {len(chunk)} chars "
+                            f"({len(corrected_text)/len(chunk):.0%}). Using original."
+                        )
+                        corrected_chunks.append(chunk)
+                    else:
+                        corrected_chunks.append(corrected_text)
+                        logger.info(
+                            f"Chunk {i}/{num_chunks} correction complete "
+                            f"({len(chunk)} -> {len(corrected_text)} chars)."
+                        )
+
+                except Exception as e:
+                    logger.error(
+                        f"[CORRECTION FAILED] chunk {i}/{num_chunks}: {type(e).__name__}: {e}"
                     )
                     corrected_chunks.append(chunk)
-                else:
-                    corrected_chunks.append(corrected_text)
-                    logger.info(
-                        f"Chunk {i}/{num_chunks} correction complete "
-                        f"({len(chunk)} -> {len(corrected_text)} chars)."
+                    logger.warning(
+                        f"[CORRECTION FALLBACK] Using original text for chunk {i}/{num_chunks}"
                     )
 
-            except Exception as e:
-                logger.error(
-                    f"[CORRECTION FAILED] chunk {i}/{num_chunks}: {type(e).__name__}: {e}"
-                )
-                corrected_chunks.append(chunk)
-                logger.warning(
-                    f"[CORRECTION FALLBACK] Using original text for chunk {i}/{num_chunks}"
-                )
-
-            # Rate limit between chunks to avoid 429/503
-            if self.provider == "google" and i < num_chunks:
-                time.sleep(2)
+                # Rate limit between chunks to avoid 429/503
+                if self.provider == "google" and i < num_chunks:
+                    time.sleep(2)
         finally:
             if self.provider == "gemma":
                 self._unload_gemma_model()

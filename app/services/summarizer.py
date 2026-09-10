@@ -84,10 +84,10 @@ class SummarizerService:
         chunks = self._split_into_chunks(text_to_summarize)
         num_chunks = len(chunks)
 
-        if self.provider == "gemma":
-            self._load_gemma_model()
-
         try:
+            if self.provider == "gemma":
+                self._load_gemma_model()
+
             if num_chunks > 1:
                 logger.info(
                     f"Splitting text into {num_chunks} chunks for summarization..."
@@ -128,7 +128,13 @@ class SummarizerService:
             )
         finally:
             if self.provider == "gemma":
-                self._unload_gemma_model()
+                try:
+                    self._unload_gemma_model()
+                except Exception as unload_err:
+                    logger.warning(
+                        f"(summarizer/gemma) Failed to unload model '{self.model}': {unload_err}. "
+                        "The generated summary is preserved."
+                    )
 
     def _summarize_text(
         self,
@@ -175,7 +181,12 @@ Provide a comprehensive summary covering the main topics, key arguments, and imp
                 return self._call_with_retry(prompt, max_tokens=4096)
             elif self.provider == "gemma":
                 response = self._ollama.generate(model=self.model, prompt=prompt)
-                return response.get("response", "").strip()
+                result = response.get("response", "").strip()
+                if not result:
+                    raise RuntimeError(
+                        "(summarizer/gemma) Ollama returned an empty response."
+                    )
+                return result
         except Exception as e:
             logger.error(f"Error during summarization: {e}")
             return ""

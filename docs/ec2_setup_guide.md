@@ -275,7 +275,7 @@ while IFS= read -r url || [[ -n "$url" ]]; do
         --asr-provider vibevoice \
         --llm-provider gemma \
         --loc "bitcoin_conferences" \
-        --user "John" \
+        --username "John" \
         --diarize --markdown --summarize --correct \
         2>&1 | tee -a "$LOG_FILE"
 

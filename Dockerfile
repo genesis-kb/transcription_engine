@@ -21,5 +21,5 @@ COPY . /app
 # Install the package itself
 # Includes the tstbtc-server entry point
 RUN pip install --no-cache-dir .
-# To include Whisper support, uncomment the following line:
-# RUN pip install --no-cache-dir .[whisper]
+# To include Whisper and/or VibeVoice support, uncomment:
+# RUN pip install --no-cache-dir .[all]

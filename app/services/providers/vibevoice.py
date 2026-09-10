@@ -1,6 +1,8 @@
 import json
 import os
 import re
+import shutil
+import tempfile
 
 import torch
 
@@ -18,7 +20,7 @@ MODEL_ID = "microsoft/VibeVoice-ASR-HF"
 
 
 def _get_device():
-    """Detect the best available device. Forced to 'cpu' for VibeVoice to avoid MPS memory issues."""
+    """Detect the best available device for VibeVoice."""
     if torch.cuda.is_available():
         return "cuda"
     if torch.backends.mps.is_available():
@@ -132,7 +134,7 @@ class VibeVoiceService(BaseTranscriptionService):
             output_file = self.data_writer.write_json(
                 data={"utterances": utterances},
                 file_path=transcript.output_path_with_title,
-                filename="vibevoice",
+                filename="vibevoiceservice",
             )
             logger.info(f"(vibevoice) Model output stored at: {output_file}")
 
@@ -162,9 +164,9 @@ class VibeVoiceService(BaseTranscriptionService):
                 content = segment.get("Content", "").strip()
 
                 # Insert chapter header if needed
-                if chapter_index is not None and chapter_index < len(chapters):
-                    _, chapter_start_time, chapter_title = chapters[chapter_index]
-                    if chapter_start_time <= segment_start:
+                if chapter_index is not None:
+                    while chapter_index < len(chapters) and chapters[chapter_index][1] <= segment_start:
+                        _, chapter_start_time, chapter_title = chapters[chapter_index]
                         final_transcript += f"\n\n## {chapter_title}\n\n"
                         chapter_index += 1
 
@@ -215,18 +217,25 @@ class VibeVoiceService(BaseTranscriptionService):
         except Exception as e:
             raise Exception(f"(vibevoice) Error finalizing transcript: {e}")
 
-    def _split_audio_into_chunks(self, audio_file: str, chunk_length_s: float) -> list[tuple[str, float]]:
+    def _split_audio_into_chunks(
+        self, audio_file: str, chunk_length_s: float, output_dir: str = None
+    ) -> list[tuple[str, float]]:
         """Split audio into fixed-length chunks. Private to VibeVoiceService."""
+        if chunk_length_s <= 0:
+            raise ValueError(
+                f"vibevoice_chunk_length must be a positive number, got {chunk_length_s}"
+            )
         import librosa
         import soundfile as sf
-        
-        output_dir = os.path.splitext(audio_file)[0] + "_vibevoice_chunks"
+
+        if output_dir is None:
+            output_dir = os.path.splitext(audio_file)[0] + "_vibevoice_chunks"
         if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+            os.makedirs(output_dir, exist_ok=True)
 
         audio, sr = librosa.load(audio_file, sr=None)
         duration = librosa.get_duration(y=audio, sr=sr)
-        
+
         chunk_paths = []
         chunk_start = 0.0
         chunk_counter = 1
@@ -236,7 +245,7 @@ class VibeVoiceService(BaseTranscriptionService):
             chunk_audio = audio[int(chunk_start * sr) : int(chunk_end * sr)]
             chunk_path = os.path.join(output_dir, f"chunk_{chunk_counter}.wav")
             sf.write(chunk_path, chunk_audio, sr)
-            
+
             chunk_paths.append((chunk_path, chunk_start))
             chunk_start = chunk_end
             chunk_counter += 1
@@ -245,6 +254,7 @@ class VibeVoiceService(BaseTranscriptionService):
 
     def transcribe(self, transcript: Transcript) -> None:
         """Full VibeVoice transcription flow."""
+        temp_dir = tempfile.mkdtemp(prefix="vibevoice_chunks_")
         try:
             # Build context prompt from title + speakers (Bitcoin hotwords)
             context_parts = []
@@ -257,11 +267,17 @@ class VibeVoiceService(BaseTranscriptionService):
             context_prompt = ". ".join(context_parts) if context_parts else None
 
             chunk_length = settings.config.getint("vibevoice_chunk_length", 180)
-            chunks = self._split_audio_into_chunks(transcript.audio_file, chunk_length)
+            if chunk_length <= 0:
+                raise ValueError(
+                    f"vibevoice_chunk_length must be a positive integer, got {chunk_length}"
+                )
+            chunks = self._split_audio_into_chunks(
+                transcript.audio_file, chunk_length, output_dir=temp_dir
+            )
 
             self._load_asr()
             all_utterances = []
-            
+
             for chunk_path, start_offset in chunks:
                 utterances = self.audio_to_text(
                     chunk_path,
@@ -271,8 +287,6 @@ class VibeVoiceService(BaseTranscriptionService):
                     u["Start"] += start_offset
                     u["End"] += start_offset
                 all_utterances.extend(utterances)
-                
-            self._unload_asr()
 
             transcript.outputs["transcription_service_output_file"] = (
                 self.write_to_json_file(all_utterances, transcript)
@@ -286,6 +300,9 @@ class VibeVoiceService(BaseTranscriptionService):
             self.finalize_transcript(transcript)
 
         except Exception as e:
-            self._unload_asr()
             raise Exception(f"(vibevoice) Error while transcribing: {e}")
+        finally:
+            self._unload_asr()
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
 

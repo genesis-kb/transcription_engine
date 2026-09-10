@@ -32,12 +32,8 @@ pydub>=0.25
 audioop-lts>=0.2; python_version >= '3.13'
 num2words>=0.5.13
 nltk>=3.9.4
-beautifulsoup4
-python-dateutil
-ollama
-pydantic
-soundfile
-torch
-transformers
-openai-whisper
-microsocks
+beautifulsoup4==4.14.3
+python-dateutil==2.9.0.post0
+ollama==0.6.2
+pydantic==2.13.4
+soundfile==0.13.1

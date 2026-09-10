@@ -60,8 +60,15 @@ class Settings:
                         no_proxy_list.append(parsed_url.hostname)
                 except Exception:
                     pass
-            os.environ["no_proxy"] = os.getenv("NO_PROXY", ",".join(no_proxy_list))
-            os.environ["NO_PROXY"] = os.environ["no_proxy"]
+            # Merge inherited NO_PROXY entries with the new local-service exclusions
+            existing_no_proxy = os.getenv("NO_PROXY", "") or os.getenv("no_proxy", "")
+            existing_entries = [e.strip() for e in existing_no_proxy.split(",") if e.strip()]
+            for entry in existing_entries:
+                if entry not in no_proxy_list:
+                    no_proxy_list.append(entry)
+            merged_no_proxy = ",".join(no_proxy_list)
+            os.environ["no_proxy"] = merged_no_proxy
+            os.environ["NO_PROXY"] = merged_no_proxy
 
     def get_config_overview(self):
         overview = "Configuration Settings:\n"
@@ -153,7 +160,7 @@ class Settings:
 
     @property
     def GOOGLE_API_KEY(self):
-        return os._get_env_variable("GOOGLE_API_KEY")
+        return self._get_env_variable("GOOGLE_API_KEY")
 
     @property
     def CLAUDE_API_KEY(self):

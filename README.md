@@ -192,7 +192,7 @@ tstbtc transcribe "https://www.youtube.com/watch?v=VIDEO_ID" \
 
 ```bash
 tstbtc transcribe "https://www.youtube.com/watch?v=VIDEO_ID" \
-  --vibevoice \
+  --asr-provider vibevoice \
   --diarize \
   --markdown \
   --summarize \

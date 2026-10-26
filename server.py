@@ -5,13 +5,16 @@ from fastapi.responses import JSONResponse
 import logging
 
 from app.exceptions import DuplicateSourceError
-from app.logging import configure_logger
+from app.logging import configure_logger, use_utf8_output
 from routes.curator import router as curator_router
 from routes.ingestion import router as ingestion_router
 from routes.media import router as media_router
 from routes.transcription import router as transcription_router
 from routes.audiobooks import router as audiobooks_router
 
+# Done here so every way of starting the server gets it (transcriber_server,
+# the dev-mode reload worker, and `uvicorn server:app`)
+use_utf8_output()
 # Ensure our app logger is configured to output to stdout
 configure_logger(log_level=logging.INFO)
 

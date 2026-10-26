@@ -15,7 +15,9 @@ def use_utf8_output():
     for stream in (sys.stdout, sys.stderr):
         encoding = (getattr(stream, "encoding", None) or "").lower()
         if hasattr(stream, "reconfigure") and encoding != "utf-8":
-            stream.reconfigure(encoding="utf-8")
+            # Keep the existing error handler; reconfigure() would otherwise
+            # reset it to "strict" (stderr defaults to "backslashreplace").
+            stream.reconfigure(encoding="utf-8", errors=stream.errors)
 
 
 def configure_logger(log_level, working_dir=None):

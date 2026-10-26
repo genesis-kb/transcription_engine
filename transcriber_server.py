@@ -4,11 +4,10 @@ import click
 import uvicorn
 
 from app.config import settings
-from app.logging import configure_logger, get_logger, use_utf8_output
+from app.logging import configure_logger, get_logger
 from server import app
 
 
-use_utf8_output()
 configure_logger(
     logging.DEBUG
     if settings.config.getboolean("verbose_logging", False)

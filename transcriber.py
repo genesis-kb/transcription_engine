@@ -10,11 +10,12 @@ from app.api_client import APIClient
 from app.commands.cli_utils import auto_start_server, get_transcription_url
 from app.config import settings
 from app.data_writer import DataWriter
-from app.logging import configure_logger, get_logger
+from app.logging import configure_logger, get_logger, use_utf8_output
 from app.transcription import Transcription
 from app.services.factory import get_available_providers
 from app.services.translation import TranslationPipeline
 
+use_utf8_output()
 logger = get_logger()
 
 

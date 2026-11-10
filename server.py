@@ -12,8 +12,11 @@ from routes.media import router as media_router
 from routes.transcription import router as transcription_router
 from routes.audiobooks import router as audiobooks_router
 
-# Done here so every way of starting the server gets it (transcriber_server,
-# the dev-mode reload worker, and `uvicorn server:app`)
+# Switch stdout/stderr to UTF-8 before logging is set up. On Windows,
+# redirected output defaults to the locale encoding (e.g. cp1252), which
+# can't encode characters like "→" used in our log messages. Calling it at
+# import time covers every way the server starts: transcriber_server, the
+# dev-mode reload worker, and `uvicorn server:app`.
 use_utf8_output()
 # Ensure our app logger is configured to output to stdout
 configure_logger(log_level=logging.INFO)

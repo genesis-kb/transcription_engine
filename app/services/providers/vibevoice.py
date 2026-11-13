@@ -114,19 +114,17 @@ class VibeVoiceService(BaseTranscriptionService):
 
         generated_ids = output_ids[:, inputs["input_ids"].shape[1]:]
 
-        parsed = self.processor.decode(generated_ids, return_format="parsed")[0]
-
-        # Fallback: if parsing fails (returns a raw string), return empty list
-        if isinstance(parsed, str):
-            logger.warning(
-                "(vibevoice) Could not parse structured output — falling back to raw text."
+        try:
+            utterances = self.processor.decode(generated_ids, return_format="parsed")[0]
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Invalid VibeVoice JSON for {os.path.basename(audio_file)}"
+            ) from exc
+        if not isinstance(utterances, list):
+            raise ValueError(
+                f"Expected structured VibeVoice utterances for {os.path.basename(audio_file)}"
             )
-            raw_text = self.processor.decode(
-                generated_ids, return_format="transcription_only"
-            )[0]
-            return [{"Start": 0, "End": 0, "Speaker": 0, "Content": raw_text}]
-
-        return parsed  # list of {"Start", "End", "Speaker", "Content"}
+        return utterances
 
     def write_to_json_file(self, utterances: list, transcript: Transcript) -> str:
         """Save raw VibeVoice output to a JSON file."""
@@ -203,6 +201,8 @@ class VibeVoiceService(BaseTranscriptionService):
                 data = json.load(f)
 
             utterances = data.get("utterances", [])
+            if not any(utterance["Content"].strip() for utterance in utterances):
+                raise ValueError("VibeVoice returned no transcript text")
 
             logger.info(
                 f"(vibevoice) Finalizing transcript "
@@ -291,13 +291,12 @@ class VibeVoiceService(BaseTranscriptionService):
             transcript.outputs["transcription_service_output_file"] = (
                 self.write_to_json_file(all_utterances, transcript)
             )
+            self.finalize_transcript(transcript)
 
             if self.upload:
                 application.upload_file_to_s3(
                     transcript.outputs["transcription_service_output_file"]
                 )
-
-            self.finalize_transcript(transcript)
 
         except Exception as e:
             raise Exception(f"(vibevoice) Error while transcribing: {e}")

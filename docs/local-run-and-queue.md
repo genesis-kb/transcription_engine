@@ -26,7 +26,7 @@ cd transcription_engine
 ```bash
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ---
@@ -40,7 +40,7 @@ cp env.example .env
 Open `.env` and set at minimum:
 
 ```env
-DATABASE_URL=postgresql://<user>:<password>@<host>:5432/postgres?sslmode=require
+DATABASE_URL=postgresql+psycopg2://<user>:<password>@<host>:5432/postgres?sslmode=require
 GOOGLE_API_KEY=your_google_api_key
 YOUTUBE_API_KEY=your_youtube_api_key
 ```
@@ -118,7 +118,7 @@ curl http://localhost:8000/transcription/db/transcripts/
 
 | Error | Fix |
 |-------|-----|
-| `No module named uvicorn` | Run `pip install -r requirements.txt` inside your virtual environment |
+| `No module named uvicorn` | Run `pip install -e .` inside your virtual environment |
 | `ImportError: cannot import name 'genai' from 'google'` | Ensure `google-genai` is listed in `requirements.txt` and reinstall |
 | `DATABASE_URL not set` | Ensure `.env` exists and variables are exported; one-off commands need `load_dotenv()` |
 | `Network is unreachable` (Supabase) | Use the Supabase **pooler** connection string and add `sslmode=require` |
